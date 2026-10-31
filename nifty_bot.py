@@ -1,413 +1,240 @@
-import requests
-import os
+import requests, os
 from datetime import datetime
 
-# ========== TELEGRAM CONFIG ==========
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 CHAT_ID = os.environ.get("CHAT_ID")
 
 def send_telegram(msg):
-    """Send message to Telegram"""
     try:
         url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
         data = {"chat_id": CHAT_ID, "text": msg, "parse_mode": "Markdown"}
-        r = requests.post(url, data=data, timeout=20)
-        print(f"Telegram status: {r.status_code}")
+        requests.post(url, data=data, timeout=20)
     except Exception as e:
-        print(f"Telegram error: {e}")
+        print(e)
 
-# ========== DATA FETCH ==========
-def get_market_data():
-    """Fetch Nifty data from Yahoo Finance"""
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-    try:
-        # Daily for Pivots (last 30 days for ATR)
-        daily_url = "https://query1.finance.yahoo.com/v8/finance/chart/%5ENSEI?interval=1d&range=30d"
-        # Intraday 5m for indicators (last 2 days)
-        intraday_url = "https://query1.finance.yahoo.com/v8/finance/chart/%5ENSEI?interval=5m&range=2d"
-        
-        d_json = requests.get(daily_url, headers=headers, timeout=15).json()
-        i_json = requests.get(intraday_url, headers=headers, timeout=15).json()
-        
-        # Parse Daily
-        d_result = d_json['chart']['result'][0]
-        d_q = d_result['indicators']['quote'][0]
-        daily_data = []
-        for i in range(len(d_q['close'])):
-            if d_q['close'][i] and d_q['high'][i] and d_q['low'][i]:
-                daily_data.append({
-                    'open': d_q['open'][i],
-                    'high': d_q['high'][i],
-                    'low': d_q['low'][i],
-                    'close': d_q['close'][i]
-                })
-        
-        if len(daily_data) < 2:
-            raise Exception("Not enough daily data")
-        
-        prev = daily_data[-2]  # Yesterday for pivot calculation
-        H, L, C, O = prev['high'], prev['low'], prev['close'], prev['open']
-        
-        # Parse Intraday for indicators
-        i_result = i_json['chart']['result'][0]
-        i_q = i_result['indicators']['quote'][0]
-        closes = [c for c in i_q['close'] if c is not None]
-        highs = [h for h in i_q['high'] if h is not None]
-        lows = [l for l in i_q['low'] if l is not None]
-        volumes = i_q['volume']
-        
-        if not closes:
-            closes = [d['close'] for d in daily_data]
-            highs = [d['high'] for d in daily_data]
-            lows = [d['low'] for d in daily_data]
-        
-        current = closes[-1]
-        
-        return H, L, C, O, current, closes, highs, lows, volumes, daily_data
-        
-    except Exception as e:
-        print(f"Data fetch error: {e}")
-        return None
+def get_data():
+    headers = {"User-Agent": "Mozilla/5.0"}
+    daily_url = "https://query1.finance.yahoo.com/v8/finance/chart/%5ENSEI?interval=1d&range=30d"
+    intraday_url = "https://query1.finance.yahoo.com/v8/finance/chart/%5ENSEI?interval=5m&range=2d"
+    d_json = requests.get(daily_url, headers=headers, timeout=15).json()
+    i_json = requests.get(intraday_url, headers=headers, timeout=15).json()
+    
+    d_result = d_json['chart']['result'][0]
+    d_q = d_result['indicators']['quote'][0]
+    daily = []
+    for i in range(len(d_q['close'])):
+        if d_q['close'][i]:
+            daily.append({'o':d_q['open'][i],'h':d_q['high'][i],'l':d_q['low'][i],'c':d_q['close'][i]})
+    
+    prev = daily[-2]
+    H,L,C,O = prev['h'],prev['l'],prev['c'],prev['o']
+    
+    i_result = i_json['chart']['result'][0]
+    i_q = i_result['indicators']['quote'][0]
+    closes = [c for c in i_q['close'] if c is not None]
+    highs = [h for h in i_q['high'] if h is not None]
+    lows = [l for l in i_q['low'] if l is not None]
+    
+    if len(closes)<20:
+        closes = [d['c'] for d in daily]
+        highs = [d['h'] for d in daily]
+        lows = [d['l'] for d in daily]
+    
+    return H,L,C,O,closes[-1],closes,highs,lows
 
-# ========== INDICATOR FUNCTIONS ==========
 def ema(data, period):
-    if len(data) < period:
-        return None
-    k = 2 / (period + 1)
-    ema_val = sum(data[:period]) / period
-    for price in data[period:]:
-        ema_val = price * k + ema_val * (1 - k)
-    return ema_val
+    if len(data)<period: return None
+    k=2/(period+1)
+    e=sum(data[:period])/period
+    for p in data[period:]:
+        e=p*k+e*(1-k)
+    return e
 
 def rsi_calc(data, period=14):
-    if len(data) < period + 1:
-        return 50.0
-    gains = 0
-    losses = 0
-    for i in range(len(data)-period, len(data)):
-        if i <= 0: continue
-        diff = data[i] - data[i-1]
-        if diff > 0:
-            gains += diff
-        else:
-            losses += abs(diff)
-    if losses == 0:
-        return 75.0
-    rs = gains / losses if losses != 0 else 0
-    return 100 - (100 / (1 + rs))
+    if len(data)<period+1: return 50
+    gains=losses=0
+    for i in range(len(data)-period,len(data)):
+        if i<=0: continue
+        diff=data[i]-data[i-1]
+        if diff>0: gains+=diff
+        else: losses+=abs(diff)
+    if losses==0: return 75
+    rs=gains/losses if losses else 0
+    return 100-(100/(1+rs))
 
 def macd_calc(data):
-    """Returns macd_line, signal_line, histogram"""
-    if len(data) < 35:
-        return 0, 0, 0
-    ema12 = ema(data, 12)
-    ema26 = ema(data, 26)
-    if ema12 is None or ema26 is None:
-        return 0, 0, 0
-    macd_line = ema12 - ema26
-    
-    # Signal line - EMA9 of last 9 MACD values
-    macd_hist = []
+    if len(data)<35: return 0,0,0
+    e12=ema(data,12)
+    e26=ema(data,26)
+    if not e12 or not e26: return 0,0,0
+    macd_line=e12-e26
+    macd_hist=[]
     for i in range(9):
-        slice_end = len(data) - i if i > 0 else None
-        slice_data = data[:slice_end]
-        if len(slice_data) < 26:
-            break
-        e12 = ema(slice_data, 12)
-        e26 = ema(slice_data, 26)
-        if e12 and e26:
-            macd_hist.append(e12 - e26)
-    signal = sum(macd_hist) / len(macd_hist) if macd_hist else 0
-    hist = macd_line - signal
-    return macd_line, signal, hist
+        sl = data[:len(data)-i if i>0 else None]
+        if len(sl)<26: break
+        ee12=ema(sl,12)
+        ee26=ema(sl,26)
+        if ee12 and ee26: macd_hist.append(ee12-ee26)
+    signal=sum(macd_hist)/len(macd_hist) if macd_hist else 0
+    hist=macd_line-signal
+    return macd_line,signal,hist
 
-def supertrend_calc(closes, highs, lows, period=10, multiplier=3.0):
-    """Supertrend calculation"""
-    if len(closes) < period + 2:
-        return "BULLISH", closes[-1], 0
-    
-    # Calculate ATR
-    tr_list = []
-    for i in range(1, min(len(closes), len(highs), len(lows))):
-        h = highs[i]
-        l = lows[i]
-        pc = closes[i-1]
-        tr = max(h - l, abs(h - pc), abs(l - pc))
+def supertrend_calc(closes,highs,lows,period=10,mult=3.0):
+    if len(closes)<period+2: return "BULLISH",closes[-1],0
+    tr_list=[]
+    limit=min(len(closes),len(highs),len(lows))
+    for i in range(1,limit):
+        h=highs[i]; l=lows[i]; pc=closes[i-1]
+        tr=max(h-l,abs(h-pc),abs(l-pc))
         tr_list.append(tr)
-    
-    if len(tr_list) < period:
-        atr = (highs[-1] - lows[-1]) if highs and lows else 100
+    atr=sum(tr_list[-period:])/period if len(tr_list)>=period else (highs[-1]-lows[-1])
+    hl2=(highs[-1]+lows[-1])/2 if highs and lows else closes[-1]
+    upper=hl2+mult*atr
+    lower=hl2-mult*atr
+    curr=closes[-1]
+    if curr>upper:
+        return "BULLISH",lower,atr
+    elif curr<lower:
+        return "BEARISH",upper,atr
     else:
-        atr = sum(tr_list[-period:]) / period
-    
-    hl2 = (highs[-1] + lows[-1]) / 2 if highs and lows else closes[-1]
-    upper_band = hl2 + multiplier * atr
-    lower_band = hl2 - multiplier * atr
-    
-    curr = closes[-1]
-    # Simplified trend logic
-    if curr > upper_band:
-        trend = "BULLISH"
-        st_val = lower_band
-    elif curr < lower_band:
-        trend = "BEARISH"
-        st_val = upper_band
-    else:
-        trend = "BULLISH" if curr > lower_band else "BEARISH"
-        st_val = lower_band if trend == "BULLISH" else upper_band
-    
-    return trend, st_val, atr
+        trend="BULLISH" if curr>lower else "BEARISH"
+        val=lower if trend=="BULLISH" else upper
+        return trend,val,atr
 
-def calculate_all_pivots(H, L, C):
-    """All pivot types from Pivot Boss book"""
-    # Basic Pivot
-    P = (H + L + C) / 3
-    
-    # 1. CPR - Central Pivot Range (Most Important)
-    BC = (H + L) / 2
-    TC = 2 * P - BC
-    
-    # 2. Classic Floor Pivots
-    R1 = 2 * P - L
-    S1 = 2 * P - H
-    R2 = P + (H - L)
-    S2 = P - (H - L)
-    R3 = H + 2 * (P - L)
-    S3 = L - 2 * (H - P)
-    
-    # 3. Fibonacci Pivots (0.382, 0.618, 1.0)
-    rng = H - L
-    fR1 = P + 0.382 * rng
-    fS1 = P - 0.382 * rng
-    fR2 = P + 0.618 * rng
-    fS2 = P - 0.618 * rng
-    fR3 = P + 1.0 * rng
-    fS3 = P - 1.0 * rng
-    
-    # 4. Camarilla (Intraday reversal)
-    cam_R4 = C + (H - L) * 1.1 / 2
-    cam_S4 = C - (H - L) * 1.1 / 2
-    cam_R3 = C + (H - L) * 1.1 / 4
-    cam_S3 = C - (H - L) * 1.1 / 4
-    cam_R5 = C + (H - L) * 1.1 / 1
-    cam_S5 = C - (H - L) * 1.1 / 1
-    
-    # 5. Woodie's (More weight to close)
-    woodie_P = (H + L + 2 * C) / 4
-    woodie_R1 = 2 * woodie_P - L
-    woodie_S1 = 2 * woodie_P - H
-    woodie_R2 = woodie_P + (H - L)
-    woodie_S2 = woodie_P - (H - L)
-    
-    return {
-        'P': P, 'BC': BC, 'TC': TC,
-        'classic_R1': R1, 'classic_S1': S1, 'classic_R2': R2, 'classic_S2': S2, 'classic_R3': R3, 'classic_S3': S3,
-        'fib_R1': fR1, 'fib_S1': fS1, 'fib_R2': fR2, 'fib_S2': fS2, 'fib_R3': fR3, 'fib_S3': fS3,
-        'cam_R3': cam_R3, 'cam_S3': cam_S3, 'cam_R4': cam_R4, 'cam_S4': cam_S4, 'cam_R5': cam_R5, 'cam_S5': cam_S5,
-        'woodie_P': woodie_P, 'woodie_R1': woodie_R1, 'woodie_S1': woodie_S1, 'woodie_R2': woodie_R2, 'woodie_S2': woodie_S2
-    }
-
-# ========== MAIN LOGIC ==========
 try:
-    data = get_market_data()
-    if not data:
-        raise Exception("Failed to fetch market data from Yahoo")
+    H,L,C,O,curr,closes,highs,lows = get_data()
+    P=(H+L+C)/3
+    BC=(H+L)/2
+    TC=2*P-BC
+    R1=2*P-L
+    S1=2*P-H
+    R2=P+(H-L)
+    S2=P-(H-L)
+    R3=H+2*(P-L)
+    S3=L-2*(H-P)
+    rng=H-L
+    fR1=P+0.382*rng; fS1=P-0.382*rng
+    fR2=P+0.618*rng; fS2=P-0.618*rng
+    cam_R4=C+rng*1.1/2; cam_S4=C-rng*1.1/2
+    cam_R3=C+rng*1.1/4; cam_S3=C-rng*1.1/4
     
-    H, L, C, O, curr, closes, highs, lows, volumes, daily_data = data
-    piv = calculate_all_pivots(H, L, C)
+    ema9=ema(closes,9) or curr
+    ema21=ema(closes,21) or curr
+    ema50=ema(closes,50) or curr
+    rsi_val=rsi_calc(closes,14)
+    macd_line,signal_line,hist=macd_calc(closes)
+    st_trend,st_val,atr=supertrend_calc(closes,highs,lows)
+    typical=[(h+l+c)/3 for h,l,c in zip(highs[-50:],lows[-50:],closes[-50:])] if len(highs)>=20 else [P]
+    vwap=sum(typical)/len(typical)
     
-    # Indicators
-    ema9 = ema(closes, 9)
-    ema21 = ema(closes, 21)
-    ema50 = ema(closes, 50)
-    ema200 = ema(closes, 200) if len(closes) > 200 else ema([d['close'] for d in daily_data], 50)
-    rsi_val = rsi_calc(closes, 14)
-    macd_line, signal_line, hist = macd_calc(closes)
-    st_trend, st_val, atr = supertrend_calc(closes, highs, lows, 10, 3.0)
+    cpr_w=abs(TC-BC)
+    cpr_pct=cpr_w/P*100
+    cpr_status="NARROW (Trend Day)" if cpr_pct<0.2 else "WIDE (Range Day)" if cpr_pct>0.5 else "Normal"
     
-    # VWAP (Simplified)
-    if highs and lows and len(highs) >= 20:
-        typical = [(h+l+c)/3 for h,l,c in zip(highs[-50:], lows[-50:], closes[-50:])]
-        vwap = sum(typical) / len(typical) if typical else piv['P']
+    buy=sell=0
+    reasons=[]
+    
+    if curr>TC:
+        buy+=2; reasons.append("Above CPR (Bullish)")
+    elif curr<BC:
+        sell+=2; reasons.append("Below CPR (Bearish)")
     else:
-        vwap = piv['P']
+        reasons.append("Inside CPR - Wait")
     
-    # Bollinger Bands (20,2)
-    if len(closes) >= 20:
-        ma20 = sum(closes[-20:]) / 20
-        std = (sum((x-ma20)**2 for x in closes[-20:]) / 20) ** 0.5
-        bb_upper = ma20 + 2*std
-        bb_lower = ma20 - 2*std
+    if st_trend=="BULLISH":
+        buy+=2; reasons.append("Supertrend BULLISH "+str(int(st_val)))
     else:
-        bb_upper = curr + 100
-        bb_lower = curr - 100
+        sell+=2; reasons.append("Supertrend BEARISH "+str(int(st_val)))
     
-    # CPR Analysis
-    cpr_width = abs(piv['TC'] - piv['BC'])
-    cpr_pct = (cpr_width / piv['P']) * 100
-    if cpr_pct < 0.15:
-        cpr_status = "🔥 NARROW CPR (Big Trend Day Expected!)"
-    elif cpr_pct > 0.50:
-        cpr_status = "💤 WIDE CPR (Choppy Range Day)"
+    if macd_line>signal_line and hist>0:
+        buy+=2; reasons.append("MACD Bullish")
+    elif macd_line<signal_line and hist<0:
+        sell+=2; reasons.append("MACD Bearish")
     else:
-        cpr_status = "Normal CPR"
+        reasons.append("MACD Neutral")
     
-    # ========== CONFLUENCE SCORING (10 points) ==========
-    buy_pts = 0
-    sell_pts = 0
-    reasons = []
+    if ema9>ema21 and curr>ema9:
+        buy+=1; reasons.append("EMA9 > EMA21 "+str(int(ema9))+" > "+str(int(ema21)))
+    elif ema9<ema21 and curr<ema9:
+        sell+=1; reasons.append("EMA9 < EMA21 "+str(int(ema9))+" < "+str(int(ema21)))
     
-    # 1. CPR Position (2 pts) - Core Pivot Boss concept
-    if curr > piv['TC']:
-        buy_pts += 2
-        reasons.append("✅ Above CPR (Bullish)")
-    elif curr < piv['BC']:
-        sell_pts += 2
-        reasons.append("🔴 Below CPR (Bearish)")
+    if curr>vwap:
+        buy+=1; reasons.append("Above VWAP "+str(int(vwap)))
     else:
-        reasons.append("⚪ Inside CPR - Wait")
+        sell+=1; reasons.append("Below VWAP "+str(int(vwap)))
     
-    # 2. Supertrend (2 pts) - Most powerful trend filter
-    if st_trend == "BULLISH":
-        buy_pts += 2
-        reasons.append(f"✅ Supertrend BULL {st_val:.0f}")
+    if rsi_val>=60:
+        buy+=1; reasons.append("RSI Strong "+str(int(rsi_val)))
+    elif rsi_val<=40:
+        sell+=1; reasons.append("RSI Weak "+str(int(rsi_val)))
     else:
-        sell_pts += 2
-        reasons.append(f"🔴 Supertrend BEAR {st_val:.0f}")
+        reasons.append("RSI Neutral "+str(int(rsi_val)))
     
-    # 3. MACD (2 pts)
-    if macd_line > signal_line and hist > 0:
-        buy_pts += 2
-        reasons.append(f"✅ MACD Bullish ({macd_line:.1f} > {signal_line:.1f})")
-    elif macd_line < signal_line and hist < 0:
-        sell_pts += 2
-        reasons.append(f"🔴 MACD Bearish ({macd_line:.1f} < {signal_line:.1f})")
+    if curr>cam_R4:
+        buy+=1; reasons.append("Cam R4 Breakout")
+    elif curr<cam_S4:
+        sell+=1; reasons.append("Cam S4 Breakdown")
+    
+    total=buy+sell
+    if buy>=6 and buy>sell:
+        signal="STRONG BUY ("+str(buy)+"/10)"
+        conf=int(buy/total*100) if total else 0
+        sl=min(S1,st_val,curr-atr*1.5)
+        tgt1=R1; tgt2=R2
+        emoji="🟢"
+    elif sell>=6 and sell>buy:
+        signal="STRONG SELL ("+str(sell)+"/10)"
+        conf=int(sell/total*100) if total else 0
+        sl=max(R1,st_val,curr+atr*1.5)
+        tgt1=S1; tgt2=S2
+        emoji="🔴"
+    elif buy>sell:
+        signal="WEAK BUY ("+str(buy)+"/10)"
+        conf=int(buy/total*100) if total else 0
+        sl=S1; tgt1=R1; tgt2=R2; emoji="🟡"
+    elif sell>buy:
+        signal="WEAK SELL ("+str(sell)+"/10)"
+        conf=int(sell/total*100) if total else 0
+        sl=R1; tgt1=S1; tgt2=S2; emoji="🟠"
     else:
-        reasons.append(f"⚪ MACD Neutral")
+        signal="NO TRADE"; conf=0; sl=S2; tgt1=S1; tgt2=R1; emoji="⚪"
     
-    # 4. EMA (1 pt)
-    if ema9 and ema21:
-        if ema9 > ema21 and curr > ema9:
-            buy_pts += 1
-            reasons.append(f"✅ EMA9 {ema9:.0f} > EMA21 {ema21:.0f}")
-        elif ema9 < ema21 and curr < ema9:
-            sell_pts += 1
-            reasons.append(f"🔴 EMA9 {ema9:.0f} < EMA21 {ema21:.0f}")
+    reason_text="\n".join(["- "+r for r in reasons])
     
-    # 5. VWAP (1 pt)
-    if curr > vwap:
-        buy_pts += 1
-        reasons.append(f"✅ Above VWAP {vwap:.0f}")
-    else:
-        sell_pts += 1
-        reasons.append(f"🔴 Below VWAP {vwap:.0f}")
-    
-    # 6. RSI (1 pt)
-    if rsi_val >= 60:
-        buy_pts += 1
-        reasons.append(f"✅ RSI {rsi_val:.0f} Strong")
-    elif rsi_val <= 40:
-        sell_pts += 1
-        reasons.append(f"🔴 RSI {rsi_val:.0f} Weak")
-    else:
-        reasons.append(f"⚪ RSI {rsi_val:.0f} Neutral")
-    
-    # 7. Camarilla Breakout (1 pt)
-    if curr > piv['cam_R4']:
-        buy_pts += 1
-        reasons.append("✅ Breaks Cam R4 (Breakout)")
-    elif curr < piv['cam_S4']:
-        sell_pts += 1
-        reasons.append("🔴 Breaks Cam S4 (Breakdown)")
-    
-    # ========== FINAL SIGNAL ==========
-    total = buy_pts + sell_pts
-    if buy_pts >= 6 and buy_pts > sell_pts:
-        signal = f"🟢 *STRONG BUY* ({buy_pts}/10)"
-        conf = int((buy_pts/total)*100) if total else 0
-        sl = min(piv['classic_S1'], st_val, curr - atr*1.5)
-        tgt1 = piv['classic_R1']
-        tgt2 = piv['classic_R2']
-    elif sell_pts >= 6 and sell_pts > buy_pts:
-        signal = f"🔴 *STRONG SELL* ({sell_pts}/10)"
-        conf = int((sell_pts/total)*100) if total else 0
-        sl = max(piv['classic_R1'], st_val, curr + atr*1.5)
-        tgt1 = piv['classic_S1']
-        tgt2 = piv['classic_S2']
-    elif buy_pts > sell_pts:
-        signal = f"🟡 *WEAK BUY* ({buy_pts}/10)"
-        conf = int((buy_pts/total)*100) if total else 0
-        sl = piv['classic_S1']
-        tgt1 = piv['classic_R1']
-        tgt2 = piv['classic_R2']
-    elif sell_pts > buy_pts:
-        signal = f"🟠 *WEAK SELL* ({sell_pts}/10)"
-        conf = int((sell_pts/total)*100) if total else 0
-        sl = piv['classic_R1']
-        tgt1 = piv['classic_S1']
-        tgt2 = piv['classic_S2']
-    else:
-        signal = "⚪ *NO TRADE - WAIT*"
-        conf = 0
-        sl = piv['classic_S2']
-        tgt1 = piv['classic_S1']
-        tgt2 = piv['classic_R1']
-    
-    rr1 = abs(tgt1-curr) / max(1, abs(curr-sl))
-    rr2 = abs(tgt2-curr) / max(1, abs(curr-sl))
-    
-    # ========== TELEGRAM MESSAGE ==========
-    msg = f"""🚀 *NIFTY PIVOT BOSS PRO MAX*
-📅 {datetime.now().strftime('%d-%b-%Y %I:%M %p IST')}
-Prev: O {O:.0f} H {H:.0f} L {L:.0f} C {C:.0f}
-Live: {curr:.0f}
+    msg="""*NIFTY PIVOT BOSS PRO MAX*
+Date: """+datetime.now().strftime('%d-%b %I:%M %p')+"""
+Prev: H """+str(int(H))+""" L """+str(int(L))+""" C """+str(int(C))+""" | Live """+str(int(curr))+"""
 
-💎 *CPR (Pivot Boss Core):*
-TC {piv['TC']:.0f} | P {piv['P']:.0f} | BC {piv['BC']:.0f}
-Width {cpr_width:.0f} ({cpr_pct:.2f}%) - {cpr_status}
+*CPR:* TC """+str(int(TC))+""" P """+str(int(P))+""" BC """+str(int(BC))+""" ("""+cpr_status+""")
 
-📊 *ALL PIVOT TYPES:*
-*Classic:* R3 {piv['classic_R3']:.0f} R2 {piv['classic_R2']:.0f} R1 {piv['classic_R1']:.0f} | P {piv['P']:.0f} | S1 {piv['classic_S1']:.0f} S2 {piv['classic_S2']:.0f} S3 {piv['classic_S3']:.0f}
-*Fib:* R3 {piv['fib_R3']:.0f} R2 {piv['fib_R2']:.0f} R1 {piv['fib_R1']:.0f} S1 {piv['fib_S1']:.0f} S2 {piv['fib_S2']:.0f} S3 {piv['fib_S3']:.0f}
-*Cam:* R5 {piv['cam_R5']:.0f} R4 {piv['cam_R4']:.0f} R3 {piv['cam_R3']:.0f} S3 {piv['cam_S3']:.0f} S4 {piv['cam_S4']:.0f} S5 {piv['cam_S5']:.0f}
-*Woodie:* R2 {piv['woodie_R2']:.0f} R1 {piv['woodie_R1']:.0f} P {piv['woodie_P']:.0f} S1 {piv['woodie_S1']:.0f} S2 {piv['woodie_S2']:.0f}
+*LEVELS:* R3 """+str(int(R3))+""" R2 """+str(int(R2))+""" R1 """+str(int(R1))+""" S1 """+str(int(S1))+""" S2 """+str(int(S2))+""" S3 """+str(int(S3))+"""
+Cam R4 """+str(int(cam_R4))+""" S4 """+str(int(cam_S4))+""" Fib R1 """+str(int(fR1))+""" S1 """+str(int(fS1))+"""
 
-📈 *INDICATORS:*
-EMA9 {ema9:.0f} | EMA21 {ema21:.0f} | EMA50 {ema50:.0f if ema50 else 0:.0f}
-VWAP {vwap:.0f}
-RSI(14) {rsi_val:.1f} {'🟢' if rsi_val>60 else '🔴' if rsi_val<40 else '⚪'}
-MACD {macd_line:.2f} | Signal {signal_line:.2f} | Hist {hist:.2f} {'🟢' if hist>0 else '🔴'}
-Supertrend {st_trend} {st_val:.0f} {'🟢' if st_trend=='BULLISH' else '🔴'}
-ATR {atr:.0f} | BB {bb_lower:.0f}-{bb_upper:.0f}
+*INDICATORS:*
+EMA9 """+str(int(ema9))+""" EMA21 """+str(int(ema21))+""" EMA50 """+str(int(ema50))+"""
+VWAP """+str(int(vwap))+""" RSI """+str(int(rsi_val))+"""
+MACD """+str(round(macd_line,2))+""" Signal """+str(round(signal_line,2))+""" Hist """+str(round(hist,2))+"""
+Supertrend """+st_trend+""" """+str(int(st_val))+""" ATR """+str(int(atr))+"""
 
-{signal} - {conf}% Confidence
-(Buy {buy_pts} vs Sell {sell_pts})
+"""+emoji+""" *"""+signal+"""* - """+str(conf)+"""% Confidence
+Buy """+str(buy)+""" vs Sell """+str(sell)+"""
 
-🎯 *TRADE PLAN:*
-Entry: {curr:.0f}
-SL: {sl:.0f} ({abs(curr-sl):.0f} pts)
-TGT1: {tgt1:.0f} ({abs(tgt1-curr):.0f} pts) RR 1:{rr1:.2f}
-TGT2: {tgt2:.0f} ({abs(tgt2-curr):.0f} pts) RR 1:{rr2:.2f}
+*TRADE PLAN:*
+Entry: """+str(int(curr))+"""
+SL: """+str(int(sl))+""" ("""+str(int(abs(curr-sl)))+""" pts)
+TGT1: """+str(int(tgt1))+""" ("""+str(int(abs(tgt1-curr)))+""" pts)
+TGT2: """+str(int(tgt2))+"""
 
-🔍 *Confluence:*
-{chr(10).join(reasons)}
+*Confluence:*
+"""+reason_text+"""
 
-📖 *PIVOT BOSS RULES:*
-1. Above CPR + ST Bull + MACD Bull = High Prob BUY
-2. Below CPR + ST Bear + MACD Bear = High Prob SELL
-3. Inside CPR first 15 min = NO TRADE (Trading in Zone)
-4. Narrow CPR = Expect 100+ pts trend
-5. SL = Supertrend or S1/R1
-
-_Auto Bot 9:15 AM IST - GitHub Actions_
+_Rule: >6 pts = Trade, <4 = No Trade_
 """
-    
     send_telegram(msg)
-    print("PRO MAX Pivot Boss message sent successfully!")
+    print("Sent successfully")
 
 except Exception as e:
-    error_msg = f"⚠️ *Bot Error*\n{str(e)}\nTime: {datetime.now()}"
-    send_telegram(error_msg)
-    print(f"Error: {e}")
     import traceback
     traceback.print_exc()
+    send_telegram("Bot Error: "+str(e))
+
