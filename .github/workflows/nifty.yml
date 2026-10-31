@@ -9,19 +9,19 @@ jobs:
   run-bot:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
-      - name: Install dependencies
-        run: pip install requests
-
-      - name: Run bot
-        env:
+      - run: pip install requests
+      - env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
         run: python nifty_bot.py
+      - name: Commit CSV auto-update
+        run: |
+          git config --global user.name 'bot'
+          git config --global user.email 'bot@github.com'
+          git add nifty_oct25_oct26.csv || true
+          git commit -m "auto update nse data $(date)" || true
+          git push || true
