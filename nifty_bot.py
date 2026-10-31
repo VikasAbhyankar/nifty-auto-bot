@@ -131,4 +131,3 @@ print(msg)
 # Send Telegram
 if BOT_TOKEN and CHAT_ID:
     requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", data={"chat_id":CHAT_ID,"text":msg})
-
