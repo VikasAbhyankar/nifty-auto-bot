@@ -1,5 +1,4 @@
 import requests
-import pandas as pd
 from datetime import datetime
 
 def ema(data, period):
@@ -36,34 +35,36 @@ def macd_calc(data):
     signal=sum(hist)/len(hist) if hist else 0
     return macd_line,signal,macd_line-signal
 
-def supertrend_trend(closes,highs,lows):
-    # simplified: close > EMA50 = bullish
+def supertrend_trend(closes):
     e50=ema(closes,50)
     if not e50: return "BULLISH"
     return "BULLISH" if closes[-1]>e50 else "BEARISH"
 
 # Fetch 1 year daily data
+print("Fetching Nifty data...")
 headers={"User-Agent":"Mozilla/5.0"}
 url="https://query1.finance.yahoo.com/v8/finance/chart/%5ENSEI?interval=1d&range=1y"
-data=requests.get(url,headers=headers,timeout=15).json()
-result=data['chart']['result'][0]
-q=result['indicators']['quote'][0]
-
-rows=[]
-for i in range(len(q['close'])):
-    if q['close'][i]:
-        rows.append({'o':q['open'][i],'h':q['high'][i],'l':q['low'][i],'c':q['close'][i]})
-
-print(f"Total days fetched: {len(rows)}")
+try:
+    data=requests.get(url,headers=headers,timeout=15).json()
+    result=data['chart']['result'][0]
+    q=result['indicators']['quote'][0]
+    rows=[]
+    for i in range(len(q['close'])):
+        if q['close'][i]:
+            rows.append({'o':q['open'][i],'h':q['high'][i],'l':q['low'][i],'c':q['close'][i]})
+    print(f"Total days fetched: {len(rows)}")
+except Exception as e:
+    print(f"Data fetch failed: {e}")
+    exit(1)
 
 trades=[]
 wins=losses=0
 total_pnl=0
 
-for idx in range(30, len(rows)-1): # start after 30 days for indicators
+for idx in range(30, len(rows)-1):
     prev=rows[idx-1]
-    curr_day=rows[idx] # today we trade, next day we check result
-    next_day=rows[idx+1] if idx+1 < len(rows) else None
+    curr_day=rows[idx]
+    next_day=rows[idx+1]
     
     H,L,C=prev['h'],prev['l'],prev['c']
     P=(H+L+C)/3
@@ -71,18 +72,15 @@ for idx in range(30, len(rows)-1): # start after 30 days for indicators
     TC=2*P-BC
     R1=2*P-L; S1=2*P-H; R2=P+(H-L); S2=P-(H-L)
     
-    # Indicators on last 50 closes till idx
     closes=[r['c'] for r in rows[:idx]]
-    highs=[r['h'] for r in rows[:idx]]
-    lows=[r['l'] for r in rows[:idx]]
     
     ema9=ema(closes,9) or closes[-1]
     ema21=ema(closes,21) or closes[-1]
     rsi_val=rsi_calc(closes,14)
     macd_line,sig,hist=macd_calc(closes)
-    st_trend=supertrend_trend(closes,highs,lows)
+    st_trend=supertrend_trend(closes)
     
-    curr= curr_day['o'] # Entry at open
+    curr= curr_day['o']
     
     buy=sell=0
     if curr>TC: buy+=2
@@ -97,7 +95,6 @@ for idx in range(30, len(rows)-1): # start after 30 days for indicators
     if ema9>ema21 and curr>ema9: buy+=1
     elif ema9<ema21 and curr<ema9: sell+=1
     
-    # VWAP approx = P
     if curr>P: buy+=1
     else: sell+=1
     
@@ -117,8 +114,7 @@ for idx in range(30, len(rows)-1): # start after 30 days for indicators
         sl=R1
         tgt=S1
     
-    if signal!="NONE" and next_day:
-        # Check if target or SL hit in next day
+    if signal!="NONE":
         high=next_day['h']; low=next_day['l']
         pnl=0
         result="LOSS"
@@ -136,7 +132,7 @@ for idx in range(30, len(rows)-1): # start after 30 days for indicators
                 result="WIN" if pnl>0 else "LOSS"
                 if pnl>0: wins+=1
                 else: losses+=1
-        else: # SELL
+        else:
             if low<=tgt:
                 pnl=entry-tgt
                 result="WIN"
@@ -152,9 +148,8 @@ for idx in range(30, len(rows)-1): # start after 30 days for indicators
                 else: losses+=1
         
         total_pnl+=pnl
-        trades.append({'date':idx,'signal':signal,'entry':int(entry),'sl':int(sl),'tgt':int(tgt),'pnl':int(pnl),'result':result,'score':f"{buy if signal=='BUY' else sell}/10"})
+        trades.append({'signal':signal,'entry':int(entry),'sl':int(sl),'tgt':int(tgt),'pnl':int(pnl),'result':result,'score':f"{buy if signal=='BUY' else sell}/10"})
 
-# Print Results
 print("\n======== BACKTEST RESULT (Same Bot Logic) ========")
 print(f"Total Trades (Score >=6): {len(trades)}")
 print(f"Wins: {wins} | Losses: {losses}")
@@ -168,8 +163,11 @@ if len(trades)>0:
     for t in trades[-20:]:
         print(f"{t['signal']} {t['score']} Entry {t['entry']} TGT {t['tgt']} SL {t['sl']} -> {t['result']} {t['pnl']}")
 
-# Profit factor
-win_pnl=sum([t['pnl'] for t in trades if t['result']=="WIN"])
-loss_pnl=abs(sum([t['pnl'] for t in trades if t['result']=="LOSS"]))
-pf=win_pnl/loss_pnl if loss_pnl else 0
-print(f"\nProfit Factor: {pf:.2f} ( >1.5 is Good)")
+    win_pnl=sum([t['pnl'] for t in trades if t['result']=="WIN"])
+    loss_pnl=abs(sum([t['pnl'] for t in trades if t['result']=="LOSS"]))
+    pf=win_pnl/loss_pnl if loss_pnl else 0
+    print(f"\nProfit Factor: {pf:.2f} ( >1.5 is Good)")
+    if wr>=60 and pf>=1.5:
+        print("VERDICT: STRATEGY IS PROFITABLE ✅")
+    else:
+        print("VERDICT: NEEDS IMPROVEMENT - I will optimize")
