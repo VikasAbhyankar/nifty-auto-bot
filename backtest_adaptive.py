@@ -2,7 +2,11 @@ import requests, numpy as np, time
 
 def fetch(symbol, days=400):
     try:
-        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}.NS?interval=1d&range={days}d"
+        if "^" in symbol:
+    ticker = symbol
+else:
+    ticker = f"{symbol}.NS"
+url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1d&range={days}d"
         d = requests.get(url, headers={"User-Agent":"Mozilla/5.0"}, timeout=15).json()
         res = d['chart']['result'][0]; q = res['indicators']['quote'][0]
         adj = res['indicators']['adjclose'][0]['adjclose'] if 'adjclose' in res['indicators'] else q['close']
