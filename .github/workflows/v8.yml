@@ -1,0 +1,24 @@
+name: V8 Elite Self-Learning
+on:
+  schedule:
+    - cron: '*/5 3-10 * * 1-5'
+  workflow_dispatch:
+jobs:
+  v8:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      - run: pip install requests
+      - env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.CHAT_ID }}
+        run: python v8_main.py
+      - run: |
+          git config user.name "v8-bot"
+          git config user.email "v8@bot.com"
+          git add v8_experience.json intraday_memory.json nifty_ticks_today.csv || true
+          git commit -m "v8 learn $(date)" || true
+          git push || true
