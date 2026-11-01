@@ -8,4 +8,4 @@ jobs:
       - name: Install deps
         run: pip install requests numpy
       - name: Run Backtest
-        run: python backtest_killer.py
+        python backtest_adaptive.py
