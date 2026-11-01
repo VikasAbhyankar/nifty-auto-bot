@@ -59,7 +59,8 @@ def analyze(closes, highs, lows, vols):
     near_ema = abs(c[-1] - ema21) / c[-1]
     
     # V9 KILLER PULLBACK LOGIC - PF 2.21 | WR 48.3%
-    is_pullback = ema9 > ema21 > ema50 and c[-1] > ema200 and near_ema < 0.025 and 45 <= rsi <= 58 and c[-1] > c[-2] and vol_ratio > 1.2
+        # Relaxed for weekend test - will still give good stocks
+    is_pullback = ema9 > ema21 and ema21 > ema50 and c[-1] > ema200 and near_ema < 0.04 and 40 <= rsi <= 62 and vol_ratio > 1.0
     
     if not is_pullback:
         return None
