@@ -44,7 +44,7 @@ for sym in get_symbols():
         st_bull=c_hist[-1]>( (h_hist[-1]+l_hist[-1])/2 -3*atr)
         breakout=c_hist[-1]>swing_high
         
-        if breakout and vol_ratio>=1.5 and 45<=rsi<=68 and st_bull and ema9>ema21>ema50:
+        if breakout and vol_ratio>=2.0 and 50<=rsi<=60 and st_bull and ema9>ema21>ema50 and c_hist[-1] > np.max(c_hist[-50:])*0.95:
             entry=c_hist[-1]
             sl=entry-1.5*atr
             tgt=entry+3*atr
