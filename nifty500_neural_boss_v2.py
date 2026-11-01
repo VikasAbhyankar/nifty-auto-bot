@@ -87,8 +87,8 @@ Scanned: {len(symbols)} | Killer Filter: BREAKOUT+Vol1.5x+RSI45-68+EMA
 """
 if top3:
     for i,b in enumerate(top3,1):
-        sl=b['swing_low']-b['atr']
-        tgt=b['close']+1.618*b['atr']
+        sl=b['close']-1.5*b['atr']  # Tight SL
+        tgt=b['close']+3*b['atr']    # Big TGT
         rr=(tgt-b['close'])/(b['close']-sl+1e-9)
         msg+=f"{i}. {b['symbol']} {b['close']:.0f} 🔥\n   BREAKOUT {b['swing_high']:.0f} | Vol {b['vol_ratio']:.1f}x | RSI {b['rsi']:.0f} | Score {b['score']:.0f}%\n   SL {sl:.0f} | TGT {tgt:.0f} | R:R 1:{rr:.1f}\n   Why Killer: Vol {b['vol_ratio']:.1f}x + EMA Bull + ST Bull\n\n"
 else:
