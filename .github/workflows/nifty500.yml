@@ -1,0 +1,25 @@
+name: Nifty 500 Neural v7
+on:
+  schedule:
+    - cron: '50 3 * * 1-5'
+  workflow_dispatch:
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install requests numpy pandas scikit-learn
+      - env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.CHAT_ID }}
+        run: python nifty500_neural_boss_v2.py
+      - name: Save self-learning model
+        run: |
+          git config --global user.name 'bot'
+          git config --global user.email 'bot@github.com'
+          git add neural_model_v7.pkl || true
+          git commit -m "v7 model $(date)" || true
+          git push || true
