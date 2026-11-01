@@ -93,7 +93,8 @@ def analyze(closes, highs, lows, vols):
     # SL = Below swing low OR 1.2 ATR, whichever is lower (safer)
     sl_atr = c[-1] - 1.2*atr
     sl_swing = swing_low * 0.99  # 1% below swing low
-    sl = min(sl_atr, sl_swing)  # Take safer lower SL
+    sl = sl_atr if abs(sl_swing - c[-1])/c[-1] > 0.05 else sl_swing
+# If swing low >5% away, use ATR SL (3-4%), else use swing low SL
     
     # TGT = Swing high (real resistance)
     tgt_swing = swing_high
