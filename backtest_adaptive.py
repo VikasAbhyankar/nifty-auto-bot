@@ -33,6 +33,11 @@ SYMBOLS = ["RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","BHARTIARTL","SBIN","L
 
 print("Fetching Nifty...")
 nifty_data = fetch("^NSEI", 500)
+if not nifty_data:
+    print("Nifty fetch failed, using RELIANCE as proxy for market")
+    nifty_data = fetch("RELIANCE", 500)
+if not nifty_data:
+    print("Total fail - exit"); exit(1)
 n_close, n_high, n_low, n_vol = nifty_data
 trades = []; regime_stats = {}
 
