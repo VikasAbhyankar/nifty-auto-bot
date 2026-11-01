@@ -5,15 +5,12 @@ BOT_TOKEN=os.getenv("BOT_TOKEN")
 CHAT_ID=os.getenv("CHAT_ID")
 
 def get_symbols():
-    # NIFTY 50 + NEXT 50 + MIDCAP 150 = 250 STOCKS
     return [
-    # Nifty 50
     "RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","BHARTIARTL","SBIN","LT","ITC","KOTAKBANK",
     "BAJFINANCE","ASIANPAINT","MARUTI","WIPRO","AXISBANK","HCLTECH","SUNPHARMA","TITAN","ULTRACEMCO",
     "ONGC","BAJAJFINSV","NTPC","POWERGRID","M&M","TATASTEEL","JSWSTEEL","HINDALCO","ADANIENT","ADANIPORTS",
     "COALINDIA","GRASIM","TECHM","CIPLA","DIVISLAB","DRREDDY","EICHERMOT","BPCL","BRITANNIA","HEROMOTOCO",
     "HDFCLIFE","SBILIFE","INDUSINDBK","SHREECEM","APOLLOHOSP","TATACONSUM","BAJAJ-AUTO","VEDL","UPL","HINDUNILVR",
-    # Next 50 + Midcap 200
     "ZOMATO","PIDILITIND","SIEMENS","ABB","HAVELLS","BOSCHLTD","DABUR","GODREJCP","MARICO","BERGEPAINT",
     "COLPAL","MCDOWELL-N","UBL","INDIGO","IRCTC","ZYDUSLIFE","LUPIN","AUROPHARMA","ALKEM","TORNTPHARM",
     "IPCALAB","GLENMARK","MPHASIS","COFORGE","LTIM","PERSISTENT","OFSS","LTTS","POLYCAB","CUMMINSIND",
@@ -26,16 +23,14 @@ def get_symbols():
     "TATAMOTORS","BAJAJHLDNG","M&MFIN","LICHSGFIN","PFC","RECLTD","IRFC","HUDCO","IRCON","RVNL",
     "HAL","BEL","BDL","MAZDOCK","COCHINSHIP","GRSE","CONCOR","GMRINFRA","CROMPTON","KEI",
     "LTFOODS","TATACONSUM","JUBLFOOD","DEVYANI","SAPPHIRE","WESTLIFE","NYKAA","PAYTM","POLICYBZR","DELHIVERY",
-    "KPITTECH","TATAELXSI","SONACOMS","UNO Minda","MOTHERSON","MRF","BALKRISIND","APOLLOTYRE","EXIDEIND","AMARAJA",
+    "KPITTECH","TATAELXSI","SONACOMS","UNOMINDA","MOTHERSON","MRF","BALKRISIND","APOLLOTYRE","EXIDEIND","AMARAJA",
     "PETRONET","GAIL","IGL","MGL","GUJGASLTD","OIL","MRPL","CHENNPETRO","FACT","GNFC",
     "GODREJIND","KANSAINER","AKZOINDIA","COROMANDEL","CHAMBLFERT","PIIND","UPL","SUMICHEM","SOLARINDS","ASTRAL",
-    "PAGEIND","TRENT","DMART","VBL","UNITEC","TIINDIA","ESCORTS","SCHAEFFLER","SKFINDIA","TIMKEN",
-    "ABCAPITAL","ABFRL","PEL","AARTIPHARM","LAURUSLABS"
+    "PAGEIND","TRENT","DMART","VBL","TIINDIA","ESCORTS","SCHAEFFLER","SKFINDIA","TIMKEN","ABCAPITAL","ABFRL","PEL","AARTIPHARM","LAURUSLABS"
     ]
 
 def fetch_history(symbol):
     try:
-        # Fix symbols with space
         s=symbol.replace(" ","")
         url=f"https://query1.finance.yahoo.com/v8/finance/chart/{s}.NS?interval=1d&range=300d"
         d=requests.get(url, headers={"User-Agent":"Mozilla/5.0"}, timeout=15).json()
@@ -48,8 +43,7 @@ def fetch_history(symbol):
         vols=[v for v in q['volume'] if v]
         if len(closes)<100: return None
         return {'close':np.array(closes,float),'high':np.array(highs,float),'low':np.array(lows,float),'vol':np.array(vols,float)}
-    except:
-        return None
+    except: return None
 
 def calc_score(data):
     close=data['close']; high=data['high']; low=data['low']; vol=data['vol']
@@ -63,58 +57,44 @@ def calc_score(data):
     vol_avg=np.mean(vol[-20:]); vol_ratio=vol[-1]/(vol_avg+1e-9)
     swing_high=np.max(high[-11:-1]); swing_low=np.min(low[-11:-1])
     dist_high=(close[-1]-swing_high)/close[-1]*100
-    dist_low=(close[-1]-swing_low)/close[-1]*100
     st_bull=close[-1]>( (high[-1]+low[-1])/2 -3*atr14)
     score=50
     if st_bull and close[-1]>ema21: score+=15
     if ema9>ema21>ema50: score+=15
-    elif ema9<ema21<ema50: score-=15
     if 50<=rsi<=68: score+=15
-    elif rsi>78 or rsi<22: score-=15
-    if vol_ratio>1.5: score+=15
-    elif vol_ratio<0.7: score-=10
-    if -0.8<=dist_high<=1.5: score+=20
-    if -1.5<=dist_low<=0.8: score-=20
+    if vol_ratio>1.5: score+=20
+    if -0.8<=dist_high<=0.5: score+=20
     score=max(0,min(100,score))
-    return {'score':score,'rsi':rsi,'vol_ratio':vol_ratio,'atr':atr14,'dist_high':dist_high,'dist_low':dist_low,'st_bull':st_bull,'breakout':close[-1]>swing_high,'breakdown':close[-1]<swing_low,'close':close[-1],'swing_high':swing_high,'swing_low':swing_low}
+    return {'score':score,'rsi':rsi,'vol_ratio':vol_ratio,'atr':atr14,'ema_ok':ema9>ema21>ema50,'st_bull':st_bull,'breakout':close[-1]>swing_high,'close':close[-1],'swing_high':swing_high,'swing_low':swing_low}
 
 symbols=get_symbols()
 results=[]
-print(f"Scanning {len(symbols)} stocks...")
-for i,sym in enumerate(symbols):
+for sym in symbols:
     data=fetch_history(sym)
     if not data: continue
     info=calc_score(data)
-    if (info['score']>=78 and info['vol_ratio']>=1.2) or info['score']<=22:
+    # KILLER FILTER: Only real monsters
+    if info['breakout'] and info['vol_ratio']>=1.5 and 45<=info['rsi']<=68 and info['st_bull'] and info['ema_ok'] and info['score']>=85:
         results.append({'symbol':sym, **info})
-    if i%20==0: time.sleep(0.5)  # Avoid Yahoo block
 
-results=sorted(results, key=lambda x: x['score'], reverse=True)
-buys=[r for r in results if r['score']>=78][:7]  # Top 7 now
-sells=sorted([r for r in results if r['score']<=22], key=lambda x: x['score'])[:5]
+results=sorted(results, key=lambda x: (x['vol_ratio']*0.6 + x['score']*0.4), reverse=True)
+top3=results[:3]
 
-msg=f"""🧠 NIFTY 250 NEURAL v7.3 - FULL SCAN
+msg=f"""🎯 NIFTY 250 - TOP 3 KILLER PICKS
 {datetime.datetime.now().strftime('%d-%b %Y %I:%M %p')}
-Scanned: {len(symbols)} | Found: {len(results)} | Vol>=1.2x
+Scanned: {len(symbols)} | Killer Filter: BREAKOUT+Vol1.5x+RSI45-68+EMA
 
-🔥 TOP 7 BUY:
 """
-if buys:
-    for b in buys:
-        br=f"BREAKOUT {b['swing_high']:.0f} 🔥" if b['breakout'] else f"{b['dist_high']:.1f}% to {b['swing_high']:.0f}"
-        msg+=f"{b['symbol']} {b['close']:.0f} | {b['score']:.0f}% | {br} | Vol {b['vol_ratio']:.1f}x | RSI {b['rsi']:.0f}\n"
+if top3:
+    for i,b in enumerate(top3,1):
+        sl=b['swing_low']-b['atr']
+        tgt=b['close']+1.618*b['atr']
+        rr=(tgt-b['close'])/(b['close']-sl+1e-9)
+        msg+=f"{i}. {b['symbol']} {b['close']:.0f} 🔥\n   BREAKOUT {b['swing_high']:.0f} | Vol {b['vol_ratio']:.1f}x | RSI {b['rsi']:.0f} | Score {b['score']:.0f}%\n   SL {sl:.0f} | TGT {tgt:.0f} | R:R 1:{rr:.1f}\n   Why Killer: Vol {b['vol_ratio']:.1f}x + EMA Bull + ST Bull\n\n"
 else:
-    msg+="No BUY with Vol>=1.2x - Market flat. Wait.\n"
+    msg+="No Killer today - Market is flat. No trade is also a trade. Wait for Monday live.\n"
 
-msg+=f"\n🔻 TOP 5 SELL:\n"
-if sells:
-    for s in sells:
-        bd=f"BREAKDOWN {s['swing_low']:.0f} 💥" if s['breakdown'] else f"{s['dist_low']:.1f}% to {s['swing_low']:.0f}"
-        msg+=f"{s['symbol']} {s['close']:.0f} | {100-s['score']:.0f}% SELL | {bd} | Vol {s['vol_ratio']:.1f}x\n"
-else:
-    msg+="No strong SELL.\n"
-
-msg+=f"\n✅ Rule: BUY Only BREAKOUT + Vol>=1.5x | Monday 9:20AM live.\n"
+msg+=f"Rule: Only buy these 3. No other stocks.\n"
 print(msg)
 if BOT_TOKEN and CHAT_ID:
     requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", data={"chat_id":CHAT_ID,"text":msg[:4000]}, timeout=10)
