@@ -2,30 +2,39 @@ name: Nifty500 Neural Boss
 
 on:
   schedule:
-    - cron: '*/15 3-10 * * 1-5'
+    - cron: '0 3 * * 1-5'   # 8:30 AM IST Mon-Fri
+    - cron: '30 3 * * 1-5'  # 9:00 AM IST
   workflow_dispatch:
 
 jobs:
-  stocks:
+  scan:
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install deps
-        run: pip install yfinance pandas numpy requests python-telegram-bot
-      - name: Run
+      
+      - name: Install
+        run: pip install requests numpy
+      
+      - name: Run V10 Swing Killer
         env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.CHAT_ID }}
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
-        run: python nifty500_main.py
-      - name: Save memory
+        run: python nifty500_neural_boss_v2.py
+      
+      - name: Save Logs
         run: |
           git config user.name "bot"
           git config user.email "bot@github.com"
-          git add *.json || true
-          git commit -m "stocks update [skip ci]" || true
+          git add *.json *.log || true
+          git commit -m "v10 scan [skip ci]" || true
           git push || true
