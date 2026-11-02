@@ -1,31 +1,43 @@
-import requests
+import requests, time
+session = requests.Session()
+headers = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    "Accept": "application/json",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Referer": "https://www.nseindia.com/option-chain",
+    "Connection": "keep-alive"
+}
 
-def fetch_free_data():
+def fetch_option_chain(symbol="NIFTY"):
     try:
-        s=requests.Session()
-        s.get("https://www.nseindia.com",headers={"User-Agent":"Mozilla/5.0"},timeout=5)
-        # Nifty Option Chain
-        n=s.get("https://www.nseindia.com/api/option-chain-indices?symbol=NIFTY",
-                headers={"User-Agent":"Mozilla/5.0","Referer":"https://www.nseindia.com/"},timeout=8).json()
-        b=s.get("https://www.nseindia.com/api/option-chain-indices?symbol=BANKNIFTY",
-                headers={"User-Agent":"Mozilla/5.0","Referer":"https://www.nseindia.com/"},timeout=8).json()
+        # Step 1: Get NSE cookie first (IMPORTANT)
+        session.get("https://www.nseindia.com/option-chain", headers=headers, timeout=10)
+        time.sleep(1)
         
-        def parse(d):
-            pcr=d['filtered']['CE']['totOI']/d['filtered']['PE']['totOI'] if d['filtered']['PE']['totOI'] else 1
-            # Max pain approx
-            return round(1/pcr if pcr else 1,2), pcr
+        # Step 2: Now fetch option chain with cookie
+        url = f"https://www.nseindia.com/api/option-chain-indices?symbol={symbol}"
+        r = session.get(url, headers=headers, timeout=10)
+        data = r.json()
         
-        n_pcr_inv, n_pcr = parse(n)
-        b_pcr_inv, b_pcr = parse(b)
+        # Calculate PCR
+        ce_oi = sum([x['CE']['openInterest'] for x in data['records']['data'] if 'CE' in x])
+        pe_oi = sum([x['PE']['openInterest'] for x in data['records']['data'] if 'PE' in x])
+        pcr = round(pe_oi/ce_oi, 2) if ce_oi else 1.0
         
         # VIX
-        vix_r=s.get("https://www.nseindia.com/api/allIndices",headers={"User-Agent":"Mozilla/5.0"},timeout=5).json()
-        vix=15
-        for idx in vix_r['data']:
-            if 'VIX' in idx['index']:
-                vix=float(idx['last'])
-                break
-        
-        return {"NIFTY_PCR":round(n_pcr,2),"BANK_PCR":round(b_pcr,2),"VIX":vix,"status":"LIVE"}
+        try:
+            vix_r = session.get("https://www.nseindia.com/api/allIndices", headers=headers, timeout=10)
+            vix_data = vix_r.json()
+            vix = next((x['last'] for x in vix_data['data'] if x['index'] == 'India VIX'), 14.5)
+        except:
+            vix = 14.5
+            
+        return {"pcr": pcr, "vix": float(vix), "status": "LIVE"}
     except Exception as e:
-        return {"NIFTY_PCR":1.0,"BANK_PCR":1.0,"VIX":14.5,"status":f"Fallback {e}"}
+        # Fallback but don't crash
+        return {"pcr": 1.0, "vix": 14.5, "status": f"Fallback {str(e)[:50]}"}
+
+# Test both
+if __name__ == "__main__":
+    print(fetch_option_chain("NIFTY"))
+    print(fetch_option_chain("BANKNIFTY"))
