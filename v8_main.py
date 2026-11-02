@@ -1,7 +1,7 @@
 import requests, os, datetime, json
 import risk_manager as rm
 from v8_brain import SelfLearningBrain
-from option_fetcher import fetch_option_chain as fetch_free_data
+from option_fetcher import fetch_free_data
 BOT_TOKEN=os.getenv("BOT_TOKEN")
 CHAT_ID=os.getenv("CHAT_ID")
 
