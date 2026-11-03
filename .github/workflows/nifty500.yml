@@ -1,40 +1,28 @@
-name: Nifty500 Neural Boss
+name: Nifty500 Morning Report
 
 on:
-  schedule:
-    - cron: '0 3 * * 1-5'   # 8:30 AM IST Mon-Fri
-    - cron: '30 3 * * 1-5'  # 9:00 AM IST
+  repository_dispatch:
+    types: [nifty500-trigger]
   workflow_dispatch:
+  schedule:
+    - cron: '30 3 * * 1-5'  # Backup: 8:30 AM IST
 
 jobs:
-  scan:
+  run:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
       
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      
-      - name: Install
-        run: pip install requests numpy
-      
-      - name: Run V10 Swing Killer
+          
+      - name: Install deps
+        run: pip install -r requirements.txt
+        
+      - name: Run Nifty500 Bot
         env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.CHAT_ID }}
-          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
-          CHAT_ID: ${{ secrets.CHAT_ID }}
-        run: python nifty500_neural_boss_v2.py
-      
-      - name: Save Logs
-        run: |
-          git config user.name "bot"
-          git config user.email "bot@github.com"
-          git add *.json *.log || true
-          git commit -m "v10 scan [skip ci]" || true
-          git push || true
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python nifty500.py
