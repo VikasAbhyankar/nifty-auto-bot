@@ -1,43 +1,26 @@
-name: V8 Elite Self-Learning
+name: V8 Options Elite
 
 on:
-  schedule:
-    # Every 10 mins from 9 AM to 3:30 PM IST (3:30-10:00 UTC) Mon-Fri
-    - cron: '*/10 3-10 * * 1-5'
+  repository_dispatch:
+    types: [v8-trigger]
   workflow_dispatch:
 
 jobs:
-  v8:
+  run:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
+      - uses: actions/checkout@v4
+      
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install yfinance pandas numpy requests python-telegram-bot
-
+          
+      - name: Install deps
+        run: pip install -r requirements.txt
+        
       - name: Run V8 Bot
         env:
-          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
-          CHAT_ID: ${{ secrets.CHAT_ID }}
-        run: |
-          python v8_main.py
-
-      - name: Save Learning Experience
-        run: |
-          git config user.name "v8-bot"
-          git config user.email "v8-bot@github.com"
-          git add v8_experience.json || true
-          git add nifty_memory.json || true
-          git diff --staged --quiet || git commit -m "V8 learning update [skip ci]"
-          git push || echo "No changes to push"
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python v8.py
