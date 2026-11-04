@@ -1,4 +1,4 @@
-name: Nifty500 Morning Report
+name: Nifty500 Top3 Neural
 
 on:
   schedule:
@@ -14,11 +14,11 @@ jobs:
         with:
           python-version: '3.10'
       - name: Install deps
-        run: pip install requests python-telegram-bot yfinance pandas numpy
-      - name: Run Nifty500 Bot
+        run: pip install requests yfinance pandas numpy
+      - name: Run Nifty500 Top3
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.CHAT_ID }}
-        python nifty500_neural_boss_v2.py
+        run: python nifty500_neural_boss_v2.py
