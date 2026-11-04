@@ -21,4 +21,4 @@ jobs:
           CHAT_ID: ${{ secrets.CHAT_ID }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.CHAT_ID }}
-        run: python nifty_bot.py
+        python nifty500_neural_boss_v2.py
