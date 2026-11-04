@@ -1,31 +1,21 @@
 name: V8 Options Elite
-
 on:
   workflow_dispatch:
-
 jobs:
   run:
     runs-on: ubuntu-latest
-    
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
       - name: Install deps
         run: |
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
           pip install requests pandas python-telegram-bot yfinance lxml html5lib
-
       - name: Run V8 Bot
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: |
-          # Change this filename to your actual file name if different
-          python v8_options_elite.py
+        run: python v8_main.py
