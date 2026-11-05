@@ -1,7 +1,9 @@
 name: Sniper AVWP Screener
 
 on:
-  workflow_dispatch:  # Creates new button
+  workflow_dispatch:
+  schedule:
+    - cron: '15 3 * * 1-5'  # Auto runs at 8:45 AM IST Mon-Fri (3:15 UTC)
 
 jobs:
   sniper:
@@ -17,9 +19,14 @@ jobs:
 
       - name: Install deps
         run: |
-          pip install yfinance pandas numpy
+          pip install yfinance pandas numpy requests
 
       - name: Run Sniper AVWP Screener
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.CHAT_ID }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.CHAT_ID }}
         run: |
           python sniper_avwp_screener.py
           
@@ -27,5 +34,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: sniper-avwp-results
-          path: |
-            sniper_avwp_results.csv
+          path: sniper_avwp_results.csv
