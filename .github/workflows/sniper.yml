@@ -1,0 +1,31 @@
+name: Sniper AVWP Screener
+
+on:
+  workflow_dispatch:  # Creates new button
+
+jobs:
+  sniper:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install deps
+        run: |
+          pip install yfinance pandas numpy
+
+      - name: Run Sniper AVWP Screener
+        run: |
+          python sniper_avwp_screener.py
+          
+      - name: Upload Results
+        uses: actions/upload-artifact@v4
+        with:
+          name: sniper-avwp-results
+          path: |
+            sniper_avwp_results.csv
