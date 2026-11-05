@@ -1,8 +1,28 @@
-# SNIPER AVWP V3 - FINAL - WILL GIVE 5-10 RESULTS TODAY
+# SNIPER AVWP V4 - WITH TELEGRAM ALERT
 import yfinance as yf
 import pandas as pd
 from datetime import datetime
 import time
+import os
+import requests
+
+BOT_TOKEN = os.getenv("BOT_TOKEN") or os.getenv("TELEGRAM_BOT_TOKEN")
+CHAT_ID = os.getenv("CHAT_ID") or os.getenv("TELEGRAM_CHAT_ID")
+
+def send_telegram(msg):
+    if not BOT_TOKEN or not CHAT_ID:
+        print("No Telegram secrets, skipping")
+        print(msg)
+        return
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+    try:
+        # Split long messages (Telegram limit 4096)
+        for i in range(0, len(msg), 4000):
+            chunk = msg[i:i+4000]
+            r = requests.post(url, json={"chat_id": CHAT_ID, "text": chunk, "parse_mode": "Markdown"}, timeout=20)
+            print(f"Telegram sent {r.status_code}")
+    except Exception as e:
+        print(f"Telegram error {e}")
 
 SYMBOLS=["RELIANCE.NS","TCS.NS","HDFCBANK.NS","ICICIBANK.NS","INFY.NS","BHARTIARTL.NS","ITC.NS","SBIN.NS","LT.NS","HINDUNILVR.NS","BAJFINANCE.NS","MARUTI.NS","SUNPHARMA.NS","KOTAKBANK.NS","HCLTECH.NS","M&M.NS","NTPC.NS","AXISBANK.NS","ULTRACEMCO.NS","TITAN.NS","ASIANPAINT.NS","ADANIENT.NS","ADANIPORTS.NS","BAJAJFINSV.NS","WIPRO.NS","POWERGRID.NS","COALINDIA.NS","HINDALCO.NS","JSWSTEEL.NS","TATASTEEL.NS","ONGC.NS","GRASIM.NS","CIPLA.NS","BPCL.NS","EICHERMOT.NS","BAJAJ-AUTO.NS","DRREDDY.NS","SBILIFE.NS","HDFCLIFE.NS","TECHM.NS","BRITANNIA.NS","APOLLOHOSP.NS","DIVISLAB.NS","INDUSINDBK.NS","VEDL.NS","TRENT.NS","HAL.NS","BEL.NS","RECLTD.NS","PFC.NS","TATAPOWER.NS"]
 
@@ -28,39 +48,31 @@ def calc_avwap(df, anchor):
 
 def check(sym):
     try:
-        time.sleep(0.5) # Avoid Yahoo block
-        monthly = yf.download(sym, period="2y", interval="1mo", progress=False, auto_adjust=False)
-        weekly = yf.download(sym, period="1y", interval="1wk", progress=False, auto_adjust=False)
+        time.sleep(0.4)
         daily = yf.download(sym, period="6mo", interval="1d", progress=False, auto_adjust=False)
         hourly = yf.download(sym, period="2mo", interval="1h", progress=False, auto_adjust=False)
-        if len(hourly)<50 or len(daily)<50: return None
-        for df in [monthly, weekly, daily, hourly]:
+        if len(hourly)<60 or len(daily)<50: return None
+        for df in [daily, hourly]:
             if isinstance(df.columns, pd.MultiIndex): df.columns=df.columns.get_level_values(0)
         
-        # EMA - V3 RELAXED: Only Daily 8>20 and Hourly 200>100 needed
         d8 = get_ema(daily['Close'], 8).iloc[-1]; d20 = get_ema(daily['Close'], 20).iloc[-1]
         h200 = get_ema(hourly['Close'], 200).iloc[-1] if len(hourly)>=200 else get_ema(hourly['Close'], 100).iloc[-1]
         h100 = get_ema(hourly['Close'], 100).iloc[-1]
         
-        # RELAXED FILTER: Daily bullish OR Weekly bullish + Hourly bullish
-        if not (d8 > d20): 
-            # Allow if close to crossover
-            if (d8/d20) < 0.97: return None
-        
-        if not (h200 > h100*0.98): return None # Hourly uptrend
+        if not (d8 > d20 or d8/d20 > 0.97): return None
+        if not (h200 > h100*0.98): return None
 
-        # Swing lows
-        lows = find_swing_lows(daily, 5) + find_swing_lows(weekly, 3) + find_swing_lows(hourly, 15)
+        lows = find_swing_lows(daily, 5) + find_swing_lows(hourly, 15)
         if not lows: return None
         
         avwps=[]
         for anchor, swing in lows:
-            # Try daily AVWP
             av = calc_avwap(daily, anchor)
-            if av: avwps.append((av, anchor, "D", swing))
-            # Hourly AVWP
+            if av and av > swing*0.7 and av < swing*1.3: # Valid AVWP near swing
+                avwps.append((av, anchor, "D", swing))
             av2 = calc_avwap(hourly, anchor)
-            if av2: avwps.append((av2, anchor, "H", swing))
+            if av2 and av2 > swing*0.7 and av2 < swing*1.3:
+                avwps.append((av2, anchor, "H", swing))
         
         if not avwps: return None
         
@@ -73,7 +85,6 @@ def check(sym):
         dist = abs(curr-avwap_val)/avwap_val*100
         dist_ema = abs(curr-h200)/h200*100
         
-        # V3 ULTRA RELAXED: 5% near AVWP + 7% near 200EMA
         if dist < 5.0 and dist_ema < 7.0:
             signal = "SNIPER BUY" if (is_green and curr > avwap_val) else "WATCHLIST"
             return {
@@ -86,16 +97,15 @@ def check(sym):
                 "dist_ema": round(dist_ema,2),
                 "signal": signal,
                 "sl": round(avwap_val*0.99,2),
+                "tgt1": round(curr*1.02,2),
+                "tgt2": round(curr*1.035,2),
                 "anchor": str(anchor_date.date()),
                 "green": is_green
             }
         return None
-    except Exception as e:
-        return None
+    except: return None
 
-print(f"=== SNIPER AVWP V3 RELAXED - {datetime.now()} ===")
-print("Filter: Daily 8>20 (relaxed) + Hourly 200>100 + Price within 5% of Swing Low AVWP + within 7% of 200EMA\n")
-
+print(f"=== SNIPER AVWP V4 TELEGRAM - {datetime.now()} ===")
 res_buy=[]; res_watch=[]
 for s in SYMBOLS:
     r=check(s)
@@ -103,17 +113,26 @@ for s in SYMBOLS:
         if r['signal']=="SNIPER BUY": res_buy.append(r)
         else: res_watch.append(r)
 
-print(f"--- SNIPER BUY (Green Close > AVWP) --- {len(res_buy)}")
-for r in sorted(res_buy, key=lambda x: x['dist_avwp']):
-    print(f"{r['symbol']} @ {r['price']} | AVWP({r['tf']}) {r['avwp']} {r['dist_avwp']}% | EMA200 {r['ema200']} {r['dist_ema']}% | SL {r['sl']} | {r['anchor']} GREEN={r['green']}")
+# Build Telegram Message
+msg = f"""🎯 *SNIPER AVWP SCREENER - {datetime.now().strftime('%d-%b %Y %H:%M')}*
+Trend: Daily 8>20 + Hourly 200>100 + Swing Low AVWP
 
-print(f"\n--- WATCHLIST (Near AVWP) --- {len(res_watch)}")
-for r in sorted(res_watch, key=lambda x: x['dist_avwp'])[:15]:
-    print(f"{r['symbol']} @ {r['price']} near AVWP({r['tf']}) {r['avwp']} {r['dist_avwp']}% | EMA200 {r['ema200']} {r['dist_ema']}% | SL {r['sl']}")
+*--- SNIPER BUY (Green Close > AVWP) - {len(res_buy)} ---*
+"""
+if res_buy:
+    for r in sorted(res_buy, key=lambda x: x['dist_avwp']):
+        msg += f"\n✅ *{r['symbol']}* @ {r['price']} | AVWP({r['tf']}) {r['avwp']} ({r['dist_avwp']}%)\n   EMA200 {r['ema200']} ({r['dist_ema']}%) | SL {r['sl']} TGT {r['tgt1']}/{r['tgt2']}\n   Anchor {r['anchor']}\n"
+else:
+    msg += "\nNo BUY today - Waiting for Green close above AVWP\n"
 
-import pandas as pd
+msg += f"\n*--- WATCHLIST (Near AVWP) - {len(res_watch)} ---*\n"
+for r in sorted(res_watch, key=lambda x: x['dist_avwp'])[:12]:
+    msg += f"👀 {r['symbol']} @ {r['price']} near AVWP({r['tf']}) {r['avwp']} {r['dist_avwp']}% | SL {r['sl']}\n"
+
+msg += f"\n_Sniper Rule: Entry=Green candle close ABOVE Low AVWP | SL=Hourly close BELOW AVWP_\n_Hourly 200EMA>{r['ema200'] if res_buy else 'check'} = Bull Trend_"
+
+print(msg)
+send_telegram(msg)
+
 if res_buy+res_watch:
     pd.DataFrame(res_buy+res_watch).to_csv("sniper_avwp_results.csv", index=False)
-    print(f"\nSaved {len(res_buy+res_watch)} results")
-else:
-    print("\nNo setups even with relaxed filter - Market crashed too far below 200EMA")
