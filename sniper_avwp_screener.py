@@ -1,112 +1,257 @@
-# V7 - KOTAK IDEAL WTH STRATEGY - Based on 3 Screenshots - SBILIFE + KOTAK BANK
-import yfinance as yf, pandas as pd, time, os, requests
+# V8 FINAL - KOTAK IDEAL WTH + 15 MIN AUTO REFRESH + ANTI-SPAM - COMPLETE CODE
+import yfinance as yf
+import pandas as pd
+import time, os, requests, json
 from datetime import datetime
 
-BOT=os.getenv("BOT_TOKEN") or os.getenv("SNIPER_BOT_TOKEN"); CHAT=os.getenv("CHAT_ID") or os.getenv("SNIPER_CHAT_ID")
-def tg(m):
-    if not BOT or not CHAT: print(m); return
-    url=f"https://api.telegram.org/bot{BOT}/sendMessage"
-    for i in range(0,len(m),3500):
-        try: requests.post(url, json={"chat_id":CHAT,"text":m[i:i+3500],"parse_mode":"Markdown"}, timeout=20)
-        except: pass
+# Telegram - Supports both bots
+BOT_TOKEN = os.getenv("BOT_TOKEN") or os.getenv("TELEGRAM_BOT_TOKEN") or os.getenv("SNIPER_BOT_TOKEN")
+CHAT_ID = os.getenv("CHAT_ID") or os.getenv("TELEGRAM_CHAT_ID") or os.getenv("SNIPER_CHAT_ID")
 
-SYMBOLS=["KOTAKBANK.NS","HDFCBANK.NS","ICICIBANK.NS","AXISBANK.NS","SBIN.NS","RELIANCE.NS","TCS.NS","INFY.NS","BHARTIARTL.NS","ITC.NS","LT.NS","BAJFINANCE.NS","MARUTI.NS","SUNPHARMA.NS","M&M.NS","TITAN.NS","ASIANPAINT.NS","HCLTECH.NS","WIPRO.NS","POWERGRID.NS","NTPC.NS","COALINDIA.NS","JSWSTEEL.NS","TATASTEEL.NS","HINDALCO.NS","ONGC.NS","CIPLA.NS","BPCL.NS","EICHERMOT.NS","BAJAJ-AUTO.NS","DRREDDY.NS","SBILIFE.NS","HDFCLIFE.NS","TECHM.NS","BRITANNIA.NS","APOLLOHOSP.NS","DIVISLAB.NS","BEL.NS","HAL.NS","RECLTD.NS","PFC.NS","TRENT.NS"]
-
-def ema(s,p): return s.ewm(span=p, adjust=False).mean()
-def swing_lows(df,w=5):
-    r=[]
-    for i in range(w,len(df)-w):
-        if df['Low'].iloc[i]==df['Low'].iloc[i-w:i+w+1].min(): r.append((df.index[i], float(df['Low'].iloc[i])))
-    return r[-10:]
-def swing_highs(df,w=5):
-    r=[]
-    for i in range(w,len(df)-w):
-        if df['High'].iloc[i]==df['High'].iloc[i-w:i+w+1].max(): r.append((df.index[i], float(df['High'].iloc[i])))
-    return r[-8:]
-def avwap(df, anchor):
+def send_telegram(msg):
+    if not BOT_TOKEN or not CHAT_ID:
+        print("No BOT_TOKEN/CHAT_ID found, printing only")
+        print(msg)
+        return
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     try:
-        d=df[df.index>=anchor]
-        if len(d)<5: return None
-        t=(d['High']+d['Low']+d['Close'])/3
-        return float(((t*d['Volume']).cumsum()/d['Volume'].cumsum()).iloc[-1])
-    except: return None
+        # Split into 3500 char chunks
+        for i in range(0, len(msg), 3500):
+            chunk = msg[i:i+3500]
+            resp = requests.post(url, json={"chat_id": CHAT_ID, "text": chunk, "parse_mode": "Markdown"}, timeout=20)
+            print(f"TG Sent chunk {i//3500+1}: {resp.status_code}")
+    except Exception as e:
+        print(f"Telegram Error: {e}")
+        print(msg)
 
-def scan(sym):
+# Nifty 50 + Next 50 - No LTIM
+SYMBOLS = [
+    "RELIANCE.NS","TCS.NS","HDFCBANK.NS","ICICIBANK.NS","INFY.NS","BHARTIARTL.NS","ITC.NS","SBIN.NS",
+    "LT.NS","HINDUNILVR.NS","BAJFINANCE.NS","MARUTI.NS","SUNPHARMA.NS","KOTAKBANK.NS","HCLTECH.NS",
+    "M&M.NS","NTPC.NS","AXISBANK.NS","ULTRACEMCO.NS","TITAN.NS","ASIANPAINT.NS","ADANIENT.NS",
+    "ADANIPORTS.NS","BAJAJFINSV.NS","WIPRO.NS","POWERGRID.NS","COALINDIA.NS","HINDALCO.NS",
+    "JSWSTEEL.NS","TATASTEEL.NS","ONGC.NS","GRASIM.NS","CIPLA.NS","BPCL.NS","EICHERMOT.NS",
+    "BAJAJ-AUTO.NS","DRREDDY.NS","SBILIFE.NS","HDFCLIFE.NS","TECHM.NS","BRITANNIA.NS",
+    "APOLLOHOSP.NS","DIVISLAB.NS","INDUSINDBK.NS","VEDL.NS","TRENT.NS","HAL.NS","BEL.NS","RECLTD.NS","PFC.NS","TATAPOWER.NS"
+]
+
+def ema(series, period):
+    return series.ewm(span=period, adjust=False).mean()
+
+def find_swing_lows(df, window=5):
+    lows = []
     try:
-        time.sleep(0.35)
-        wk=yf.download(sym,period="2y",interval="1wk",progress=False,auto_adjust=False)
-        dy=yf.download(sym,period="1y",interval="1d",progress=False,auto_adjust=False)
-        hr=yf.download(sym,period="6mo",interval="1h",progress=False,auto_adjust=False)
-        if len(hr)<150: return None
-        for df in [wk,dy,hr]:
-            if isinstance(df.columns,pd.MultiIndex): df.columns=df.columns.get_level_values(0)
+        for i in range(window, len(df)-window):
+            if df['Low'].iloc[i] == df['Low'].iloc[i-window:i+window+1].min():
+                lows.append((df.index[i], float(df['Low'].iloc[i])))
+    except Exception as e:
+        pass
+    return lows[-10:]  # Last 10
 
-        # WTH - Screenshot 3: Weekly Timeframe
-        w8=ema(wk['Close'],8).iloc[-1]; w20=ema(wk['Close'],20).iloc[-1]
-        d8=ema(dy['Close'],8).iloc[-1]; d20=ema(dy['Close'],20).iloc[-1]
-        h200=ema(hr['Close'],200).iloc[-1] if len(hr)>=200 else ema(hr['Close'],120).iloc[-1]
-        h400=ema(hr['Close'],400).iloc[-1] if len(hr)>=400 else ema(hr['Close'],200).iloc[-1]
+def find_swing_highs(df, window=5):
+    highs = []
+    try:
+        for i in range(window, len(df)-window):
+            if df['High'].iloc[i] == df['High'].iloc[i-window:i+window+1].max():
+                highs.append((df.index[i], float(df['High'].iloc[i])))
+    except:
+        pass
+    return highs[-8:]
 
-        # SCREENSHOT 2: HTF Pullback should near to 200 EMA crossed 400 EMA
-        if not (h200>h400 and w8>w20 and d8>d20): return None
+def calc_avwap(df, anchor_date):
+    try:
+        df_after = df[df.index >= anchor_date]
+        if len(df_after) < 5:
+            return None
+        typical = (df_after['High'] + df_after['Low'] + df_after['Close']) / 3
+        avwap = (typical * df_after['Volume']).cumsum() / df_after['Volume'].cumsum()
+        return float(avwap.iloc[-1])
+    except:
+        return None
 
-        # SCREENSHOT 1 & 2: AVWP High vs Low
-        low_av=[]; high_av=[]
-        for df,tf,win in [(hr,"H",12),(dy,"D",5),(wk,"W",3)]:
-            for anc,sl in swing_lows(df,win):
-                av=avwap(df,anc)
-                if av: low_av.append((av,anc,tf,sl))
-            for anc,sh in swing_highs(df,win):
-                av=avwap(df,anc)
-                if av: high_av.append((av,anc,tf,sh))
+def scan_stock(symbol):
+    try:
+        time.sleep(0.35)  # Avoid yfinance block
+        weekly = yf.download(symbol, period="2y", interval="1wk", progress=False, auto_adjust=False)
+        daily = yf.download(symbol, period="1y", interval="1d", progress=False, auto_adjust=False)
+        hourly = yf.download(symbol, period="3mo", interval="1h", progress=False, auto_adjust=False)
 
-        curr=float(hr['Close'].iloc[-1]); open_=float(hr['Open'].iloc[-1])
-        
-        # SCREENSHOT 1 FIX: Skip if Below AVWP HIGH (Resistance) - SBILIFE
-        for av_h,_,_,_ in high_av:
-            if av_h>curr and (av_h-curr)/curr*100 < 5:
-                return {"sym":sym.replace(".NS",""), "skip":"BELOW HIGH AVWP RESISTANCE", "price":curr, "high_av":round(av_h,2)}
+        if len(hourly) < 120 or len(daily) < 80 or len(weekly) < 30:
+            return None
 
-        # SCREENSHOT 2 & 3: Must be ABOVE LOW AVWP Cluster - Kotak Ideal
-        above_low=[a for a in low_av if a[0]<=curr] # AVWP below price
-        near=[a for a in above_low if abs(a[0]-curr)/curr*100<6]
-        if len(near)<2: return None
+        for df in [weekly, daily, hourly]:
+            if isinstance(df.columns, pd.MultiIndex):
+                df.columns = df.columns.get_level_values(0)
 
-        near=sorted(near, key=lambda x:x[0])
-        cluster=[near[-1]]
-        for a in reversed(near[:-1]):
-            if abs(a[0]-cluster[0][0])/cluster[0][0]*100<2.5: cluster.append(a)
-        if len(cluster)<2: return None
+        # WTH Filter: Weekly Timeframe - Kotak Ideal
+        w8 = ema(weekly['Close'], 8).iloc[-1]
+        w20 = ema(weekly['Close'], 20).iloc[-1]
+        d8 = ema(daily['Close'], 8).iloc[-1]
+        d20 = ema(daily['Close'], 20).iloc[-1]
+        h200 = ema(hourly['Close'], 200).iloc[-1] if len(hourly) >= 200 else ema(hourly['Close'], 120).iloc[-1]
+        h400 = ema(hourly['Close'], 400).iloc[-1] if len(hourly) >= 400 else ema(hourly['Close'], 200).iloc[-1]
 
-        c_avg=sum(c[0] for c in cluster)/len(cluster); c_low=min(c[0] for c in cluster); s_low=min(c[3] for c in cluster)
-        dist_c=abs(curr-c_avg)/curr*100; dist_200=abs(curr-h200)/curr*100
+        # Must be bullish WTH: 200 > 400 crossed + 8 > 20
+        if not (h200 > h400 and w8 > w20 and d8 > d20):
+            return None
 
-        # Near 200 EMA in WTH + Near AVWP Cluster
-        if dist_c<4 and dist_200<6 and curr>c_avg:
-            small_sl=round(c_low*0.992,2) # Your 450
-            big_sl=round(s_low*0.99,2) # Your 436
+        # Find all AVWPs
+        low_avwps = []
+        high_avwps = []
+
+        for df, tf, win in [(hourly, "H", 12), (daily, "D", 5), (weekly, "W", 3)]:
+            for anchor, swing_low in find_swing_lows(df, win):
+                av = calc_avwap(df, anchor)
+                if av and av > swing_low * 0.80 and av < swing_low * 1.30:
+                    low_avwps.append((av, anchor, tf, swing_low))
+            for anchor, swing_high in find_swing_highs(df, win):
+                av = calc_avwap(df, anchor)
+                if av and av > swing_high * 0.70 and av < swing_high * 1.30:
+                    high_avwps.append((av, anchor, tf, swing_high))
+
+        if len(low_avwps) < 2:
+            return None
+
+        curr_price = float(hourly['Close'].iloc[-1])
+        open_price = float(hourly['Open'].iloc[-1])
+
+        # SCREENSHOT 1 FIX: Skip if Below HIGH AVWP Resistance (SBILIFE)
+        for av_high, anchor_h, tf_h, sh in high_avwps:
+            if av_high > curr_price and (av_high - curr_price) / curr_price * 100 < 5.0:
+                return {
+                    "symbol": symbol.replace(".NS", ""),
+                    "skip": True,
+                    "reason": "BELOW HIGH AVWP RESISTANCE",
+                    "price": round(curr_price, 2),
+                    "high_avwp": round(av_high, 2)
+                }
+
+        # Must be ABOVE Low AVWP Cluster
+        above_low = [x for x in low_avwps if x[0] <= curr_price]
+        near_low = [x for x in above_low if abs(x[0] - curr_price) / curr_price * 100 < 6.0]
+
+        if len(near_low) < 2:
+            return None
+
+        # Cluster detection - Tight 1.5% cluster like Kotak 450-457
+        near_low_sorted = sorted(near_low, key=lambda x: x[0])
+        cluster = [near_low_sorted[-1]]  # Highest AVWP
+        for av in reversed(near_low_sorted[:-1]):
+            if abs(av[0] - cluster[0][0]) / cluster[0][0] * 100 < 1.5:  # Tight cluster for small SL
+                cluster.append(av)
+
+        if len(cluster) < 2:
+            return None
+
+        cluster_avg = sum(c[0] for c in cluster) / len(cluster)
+        cluster_low = min(c[0] for c in cluster)
+        swing_low = min(c[3] for c in cluster)
+
+        dist_cluster = abs(curr_price - cluster_avg) / curr_price * 100
+        dist_200ema = abs(curr_price - h200) / curr_price * 100
+
+        # Kotak Condition: Near 200 EMA + Near AVWP Cluster + Above Cluster
+        if dist_cluster < 4.0 and dist_200ema < 6.0 and curr_price > cluster_avg:
+            small_sl = round(cluster_low * 0.992, 2)  # Your 450 model
+            big_sl = round(swing_low * 0.99, 2)       # Your 436 model
+            risk = round((curr_price - small_sl) / curr_price * 100, 2)
+
+            if risk > 4.0:  # Skip high risk
+                return None
+
+            anchors_str = ", ".join([c[1].strftime('%d-%b %H:%M') for c in cluster[:3]])
+            signal = "BUY" if curr_price > open_price else "WATCH"
+
             return {
-                "sym":sym.replace(".NS",""), "price":round(curr,2), "cluster":round(c_avg,2), "cnt":len(cluster),
-                "dist_c":round(dist_c,2), "e200":round(float(h200),2), "dist200":round(dist_200,2),
-                "small_sl":small_sl, "big_sl":big_sl, "risk":round((curr-small_sl)/curr*100,2),
-                "signal":"BUY" if curr>open_ else "WATCH", "anchors":", ".join([str(c[1].strftime('%d-%b %H:%M')) for c in cluster[:3]])
+                "symbol": symbol.replace(".NS", ""),
+                "skip": False,
+                "price": round(curr_price, 2),
+                "cluster_avg": round(cluster_avg, 2),
+                "cluster_count": len(cluster),
+                "dist_cluster": round(dist_cluster, 2),
+                "ema200": round(float(h200), 2),
+                "ema400": round(float(h400), 2),
+                "dist_200": round(dist_200ema, 2),
+                "small_sl": small_sl,
+                "big_sl": big_sl,
+                "risk": risk,
+                "signal": signal,
+                "anchors": anchors_str
             }
-    except: return None
+        return None
+    except Exception as e:
+        # print(f"Error {symbol}: {e}")
+        return None
 
-buy=[]; skip=[]
-for s in SYMBOLS:
-    r=scan(s)
-    if r:
-        if "skip" in r: skip.append(r)
-        else: buy.append(r)
+# MAIN
+print(f"=== V8 KOTAK IDEAL WTH - {datetime.now()} ===")
+buy_list = []
+skip_list = []
 
-msg=f"🎯 *V7 KOTAK IDEAL WTH - {datetime.now().strftime('%d-%b %H:%M')}*\n*Based on 3 Screenshots: SBILIFE (Avoid Below High AVWP) + KOTAK (Ideal Above Low AVWP + Near 200>400)*\n\n*BUY {len(buy)} - Trading ABOVE AVWP Cluster + Near 200EMA*\n"
-for r in sorted(buy, key=lambda x:x['dist_c'])[:12]:
-    msg+=f"\n✅ *{r['sym']}* @ {r['price']} | {r['cnt']} AVWP {r['cluster']} {r['dist_c']}% | 200 {r['e200']} {r['dist200']}% | SL {r['small_sl']}({r['risk']}%) Big {r['big_sl']} | {r['anchors']}\n"
+for sym in SYMBOLS:
+    result = scan_stock(sym)
+    if result:
+        if result.get("skip"):
+            skip_list.append(result)
+        else:
+            buy_list.append(result)
 
-msg+=f"\n*SKIPPED {len(skip)} - Below HIGH AVWP Resistance (Like SBILIFE Screenshot 1)*\n"
-for s in skip[:8]: msg+=f"❌ {s['sym']} @ {s['price']} < HIGH AVWP {s['high_av']} - Resistance\n"
+# Create Message
+ist_time = datetime.now().strftime('%d-%b %H:%M')
+msg = f"🎯 *V8 KOTAK IDEAL WTH - {ist_time} IST*\n"
+msg += f"*WTH: W8>W20 + D8>D20 + H200>H400 + Above AVWP Cluster + Near 200EMA*\n\n"
+msg += f"*BUY {len(buy_list)} - Above AVWP + Near 200EMA*\n"
 
-msg+=f"\n_Kotak 457 Model: 4 AVWPs 08Jul12:15PM,29Sep,23Oct,29Oct cluster @ 450, Entry 457 Small SL 450 Big SL 436_"
-print(msg); tg(msg)
-pd.DataFrame(buy).to_csv("sniper_avwp_results.csv", index=False)
+for r in sorted(buy_list, key=lambda x: x['dist_cluster'])[:12]:
+    msg += f"\n✅ *{r['symbol']}* @ {r['price']} | {r['cluster_count']} AVWP {r['cluster_avg']} {r['dist_cluster']}% | 200 {r['ema200']} {r['dist_200']}% | SL {r['small_sl']}({r['risk']}%) Big {r['big_sl']} | {r['anchors']}\n"
+
+msg += f"\n*SKIPPED {len(skip_list)} - Below HIGH AVWP Resistance*\n"
+for s in skip_list[:8]:
+    msg += f"❌ {s['symbol']} @ {s['price']} < HIGH {s['high_avwp']} - Resistance\n"
+
+msg += f"\n_Kotak 457 Model: Entry near cluster, Small SL=Below cluster, Big SL=Below swing low_"
+msg += f"\n_Auto 15min refresh during market hours_"
+
+print(msg)
+
+# Anti-Spam Logic: Send only if price changed >0.3% or new stock
+last_file = "last_sniper.json"
+curr_prices = {r['symbol']: r['price'] for r in buy_list}
+should_send = True
+
+if os.path.exists(last_file):
+    try:
+        with open(last_file, 'r') as f:
+            last_data = json.load(f)
+        # If same symbols and all prices within 0.3%, skip
+        if len(last_data) == len(curr_prices):
+            all_same = True
+            for sym, price in curr_prices.items():
+                if sym not in last_data:
+                    all_same = False
+                    break
+                if abs(price - last_data[sym]) / last_data[sym] * 100 > 0.35:
+                    all_same = False
+                    break
+            if all_same:
+                should_send = False
+                print("No significant change >0.35%, skipping Telegram to avoid spam")
+    except Exception as e:
+        print(f"Last file read error: {e}")
+
+if should_send:
+    send_telegram(msg)
+    # Save current
+    try:
+        with open(last_file, 'w') as f:
+            json.dump(curr_prices, f)
+    except:
+        pass
+else:
+    print("Message not sent (anti-spam), but logged")
+
+# Save CSV
+if buy_list:
+    df = pd.DataFrame(buy_list)
+    df.to_csv("sniper_avwp_results.csv", index=False)
+    print(f"Saved {len(buy_list)} results to CSV")
