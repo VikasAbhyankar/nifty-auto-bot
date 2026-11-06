@@ -1,4 +1,5 @@
 # V11 FINAL - FORCE TELEGRAM EVERY 15 MINS - NO ANTI-SPAM BLOCK
+# V11.1 Force Enable Scheduled Runs - 06-Nov 2026
 import yfinance as yf, pandas as pd, time, os, requests, json
 from datetime import datetime, timedelta
 
