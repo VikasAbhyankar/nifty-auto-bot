@@ -2,7 +2,6 @@ name: Sniper AVWP Screener - 15 Min
 
 on:
   schedule:
-    # Every 15 mins 03:45 to 10:00 UTC = 09:15 to 15:30 IST, Mon-Fri
     - cron: '0,15,30,45 3-10 * * 1-5'
   workflow_dispatch:
 
@@ -19,29 +18,25 @@ jobs:
           python-version: '3.10'
 
       - name: Install dependencies
-        run: |
-          pip install yfinance pandas requests
+        run: pip install yfinance pandas requests
 
       - name: Check Market Hours IST
         id: market_check
         run: |
+          echo "Event: ${{ github.event_name }}"
+          # If manual run, ALWAYS run
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "skip=false" >> $GITHUB_OUTPUT
+            echo "Manual run - Force RUN"
+            exit 0
+          fi
           IST_HOUR=$(TZ='Asia/Kolkata' date +'%H')
           IST_MIN=$(TZ='Asia/Kolkata' date +'%M')
           IST_DAY=$(TZ='Asia/Kolkata' date +'%u')
           echo "IST Time $IST_HOUR:$IST_MIN Day $IST_DAY"
-          if [ "$IST_DAY" -gt 5 ]; then
-            echo "skip=true" >> $GITHUB_OUTPUT
-            echo "Weekend - Skip"
-            exit 0
-          fi
+          if [ "$IST_DAY" -gt 5 ]; then echo "skip=true" >> $GITHUB_OUTPUT; exit 0; fi
           TOTAL=$((10#$IST_HOUR*60 + 10#$IST_MIN))
-          if [ $TOTAL -lt 555 ] || [ $TOTAL -gt 930 ]; then
-            echo "skip=true" >> $GITHUB_OUTPUT
-            echo "Outside market hours - Skip"
-          else
-            echo "skip=false" >> $GITHUB_OUTPUT
-            echo "Market Open - Run"
-          fi
+          if [ $TOTAL -lt 555 ] || [ $TOTAL -gt 930 ]; then echo "skip=true" >> $GITHUB_OUTPUT; else echo "skip=false" >> $GITHUB_OUTPUT; fi
 
       - name: Run Sniper V8
         if: steps.market_check.outputs.skip == 'false'
@@ -52,8 +47,7 @@ jobs:
           SNIPER_CHAT_ID: ${{ secrets.SNIPER_CHAT_ID }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.CHAT_ID }}
-        run: |
-          python sniper_avwp_screener.py
+        run: python sniper_avwp_screener.py
 
       - name: Save last state
         if: steps.market_check.outputs.skip == 'false'
