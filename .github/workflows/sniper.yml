@@ -2,7 +2,8 @@ name: Sniper AVWP Screener - 15 Min
 
 on:
   schedule:
-    - cron: '0,15,30,45 3-10 * * 1-5'
+    # Run every 15 mins - GitHub will show as "scheduled" not "manual"
+    - cron: '*/15 * * * *'
   workflow_dispatch:
 
 jobs:
@@ -20,26 +21,7 @@ jobs:
       - name: Install dependencies
         run: pip install yfinance pandas requests
 
-      - name: Check Market Hours IST
-        id: market_check
-        run: |
-          echo "Event: ${{ github.event_name }}"
-          # If manual run, ALWAYS run
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "skip=false" >> $GITHUB_OUTPUT
-            echo "Manual run - Force RUN"
-            exit 0
-          fi
-          IST_HOUR=$(TZ='Asia/Kolkata' date +'%H')
-          IST_MIN=$(TZ='Asia/Kolkata' date +'%M')
-          IST_DAY=$(TZ='Asia/Kolkata' date +'%u')
-          echo "IST Time $IST_HOUR:$IST_MIN Day $IST_DAY"
-          if [ "$IST_DAY" -gt 5 ]; then echo "skip=true" >> $GITHUB_OUTPUT; exit 0; fi
-          TOTAL=$((10#$IST_HOUR*60 + 10#$IST_MIN))
-          if [ $TOTAL -lt 555 ] || [ $TOTAL -gt 930 ]; then echo "skip=true" >> $GITHUB_OUTPUT; else echo "skip=false" >> $GITHUB_OUTPUT; fi
-
-      - name: Run Sniper V8
-        if: steps.market_check.outputs.skip == 'false'
+      - name: Run Sniper V10 Auto
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
@@ -47,13 +29,17 @@ jobs:
           SNIPER_CHAT_ID: ${{ secrets.SNIPER_CHAT_ID }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.CHAT_ID }}
-        run: python sniper_avwp_screener.py
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+        run: |
+          echo "Event: $GITHUB_EVENT_NAME"
+          echo "UTC Time: $(date -u)"
+          echo "IST Time: $(TZ='Asia/Kolkata' date)"
+          python sniper_avwp_screener.py
 
-      - name: Save last state
-        if: steps.market_check.outputs.skip == 'false'
+      - name: Save state
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           git add sniper_avwp_results.csv last_sniper.json || true
-          git commit -m "15min update $(TZ='Asia/Kolkata' date +'%d-%b %H:%M IST')" || true
+          git commit -m "auto $(TZ='Asia/Kolkata' date +'%H:%M IST')" || true
           git push || true
