@@ -2,7 +2,6 @@ name: Sniper AVWP Screener - 15 Min
 
 on:
   schedule:
-    # Run every 15 mins - GitHub will show as "scheduled" not "manual"
     - cron: '*/15 * * * *'
   workflow_dispatch:
 
@@ -10,36 +9,32 @@ jobs:
   sniper:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v3
+      - name: Checkout repo
+        uses: actions/checkout@v4
 
       - name: Setup Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
       - name: Install dependencies
-        run: pip install yfinance pandas requests
+        run: |
+          pip install --upgrade pip
+          pip install yfinance pandas requests pytz
 
-      - name: Run Sniper V10 Auto
+      - name: Run Sniper V10
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
           SNIPER_BOT_TOKEN: ${{ secrets.SNIPER_BOT_TOKEN }}
           SNIPER_CHAT_ID: ${{ secrets.SNIPER_CHAT_ID }}
-          TELEGRAM_BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.CHAT_ID }}
           GITHUB_EVENT_NAME: ${{ github.event_name }}
-        run: |
-          echo "Event: $GITHUB_EVENT_NAME"
-          echo "UTC Time: $(date -u)"
-          echo "IST Time: $(TZ='Asia/Kolkata' date)"
-          python sniper_avwp_screener.py
+        run: python sniper_avwp_screener.py
 
-      - name: Save state
+      - name: Save results
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add sniper_avwp_results.csv last_sniper.json || true
-          git commit -m "auto $(TZ='Asia/Kolkata' date +'%H:%M IST')" || true
-          git push || true
+          git add sniper_avwp_results.csv last_sniper.json || echo "No files to add"
+          git commit -m "auto update $(TZ='Asia/Kolkata' date +'%d-%b %H:%M IST')" || echo "No changes"
+          git push || echo "Push failed - no changes"
