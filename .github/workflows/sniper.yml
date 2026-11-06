@@ -1,37 +1,54 @@
-name: Sniper AVWP Screener
+name: Sniper AVWP Screener - 15 Min
 
 on:
-  workflow_dispatch:
   schedule:
-    - cron: '15 3 * * 1-5'  # Auto runs at 8:45 AM IST Mon-Fri (3:15 UTC)
+    # Every 15 mins during market hours: 9:15 to 15:30 IST = 03:45 to 10:00 UTC
+    - cron: '0,15,30,45 3-10 * * 1-5'
+  workflow_dispatch:
 
 jobs:
   sniper:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
         with:
           python-version: '3.10'
-
+          
       - name: Install deps
+        run: pip install yfinance pandas requests
+        
+      - name: Check Market Hours IST
+        id: market_check
         run: |
-          pip install yfinance pandas numpy requests
-
-      - name: Run Sniper AVWP Screener
+          IST_HOUR=$(TZ='Asia/Kolkata' date +'%H')
+          IST_MIN=$(TZ='Asia/Kolkata' date +'%M')
+          IST_DAY=$(TZ='Asia/Kolkata' date +'%u') # 1=Mon
+          echo "IST Time: $IST_HOUR:$IST_MIN Day $IST_DAY"
+          # Market: Mon-Fri 9:15 to 15:30 IST
+          if [ $IST_DAY -gt 5 ]; then echo "skip=true" >> $GITHUB_OUTPUT; exit 0; fi
+          TOTAL_MIN=$((10#$IST_HOUR*60 + 10#$IST_MIN))
+          if [ $TOTAL_MIN -lt 555 ] || [ $TOTAL_MIN -gt 930 ]; then echo "skip=true" >> $GITHUB_OUTPUT; else echo "skip=false" >> $GITHUB_OUTPUT; fi
+          
+      - name: Run Sniper V7 Every 15 Min
+        if: steps.market_check.outputs.skip == 'false'
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
+          SNIPER_BOT_TOKEN: ${{ secrets.SNIPER_BOT_TOKEN }}
+          SNIPER_CHAT_ID: ${{ secrets.SNIPER_CHAT_ID }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.CHAT_ID }}
         run: |
           python sniper_avwp_screener.py
           
-      - name: Upload Results
-        uses: actions/upload-artifact@v4
-        with:
-          name: sniper-avwp-results
-          path: sniper_avwp_results.csv
+      - name: Commit Results for Change Detection
+        if: steps.market_check.outputs.skip == 'false'
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add sniper_avwp_results.csv || true
+          git commit -m "15min update $(TZ='Asia/Kolkata' date +'%d-%b %H:%M IST')" || true
+          git push || true
