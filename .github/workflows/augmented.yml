@@ -19,7 +19,7 @@ jobs:
         run: pip install yfinance pandas requests
       - name: Run Screener
         env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.CHAT_ID }}
           CAPITAL: ${{ secrets.CAPITAL }}
         run: python augmented_ai_screener.py
