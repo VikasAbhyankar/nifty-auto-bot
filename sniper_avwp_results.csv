@@ -1,0 +1,4 @@
+skip,symbol,price,cluster_avg,cluster_count,dist_cluster,ema200,dist_200,small_sl,big_sl,risk,anchors
+False,HCLTECH,1440.0,1427.92,3,0.84,1363.56,5.31,1411.86,1350.36,1.95,"04-Nov, 28-Oct, 26-Oct"
+False,PNB,126.55,123.71,2,2.25,119.87,5.28,122.0,117.07,3.6,"03-Nov, 26-Oct"
+False,NYKAA,353.0,347.51,2,1.56,339.84,3.73,343.06,308.29,2.82,"04-Nov, 23-Oct"
