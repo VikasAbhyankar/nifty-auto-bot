@@ -1,7 +1,8 @@
-# V11 FINAL - FORCE TELEGRAM EVERY 15 MINS - NO ANTI-SPAM BLOCK
+# V11 FINAL - FORCE TELEGRAM EVERY 15 MINS - NO ANTI-SPAM BLOCK + PAPER TRADING
 # V11.1 Force Enable Scheduled Runs - 06-Nov 2026
 import yfinance as yf, pandas as pd, time, os, requests, json
 from datetime import datetime, timedelta
+from paper_trading import add_paper_trade, update_open_trades, generate_summary
 
 BOT_TOKEN = os.getenv("BOT_TOKEN") or os.getenv("SNIPER_BOT_TOKEN") or ""
 CHAT_ID = os.getenv("CHAT_ID") or os.getenv("SNIPER_CHAT_ID") or ""
@@ -107,11 +108,27 @@ def scan(sym):
 
 buy=[]; skip=[]
 print(f"Scanning {len(SYMBOLS)}...")
+update_open_trades()
 for i,s in enumerate(SYMBOLS):
     if i%20==0: print(f"{i}/{len(SYMBOLS)}")
     r=scan(s)
     if r:
         (skip if r['skip'] else buy).append(r)
+
+# PAPER TRADING - V11
+for r in buy:
+    try:
+        price = r['price']
+        sl = r['small_sl']
+        risk = price - sl
+        if risk <= 0: continue
+        tgt = round(price + (risk * 1.5), 2)
+        qty = max(1, int(33333 / risk))
+        add_paper_trade(r['symbol'], price, sl, tgt, qty)
+    except Exception as e:
+        print(f"Paper trade error {r['symbol']} {e}")
+
+paper_summary = generate_summary()
 
 ist_str=now_ist.strftime('%d-%b %H:%M IST')
 if len(buy)==0:
@@ -123,8 +140,9 @@ else:
         msg+=f"\n✅ *{r['symbol']}* @ {r['price']} | {r['cluster_count']} AVWP {r['cluster_avg']} {r['dist_cluster']}% | 200 {r['ema200']} {r['dist_200']}% | SL {r['small_sl']}({r['risk']}%)\n"
     msg+=f"\nSKIPPED {len(skip)}\n"
 
+msg+=f"\n\n{generate_summary()}"
+
 print(msg)
-# ALWAYS SEND DURING MARKET - NO ANTI-SPAM BLOCK
 send_tg(msg)
 try:
     pd.DataFrame(buy).to_csv("sniper_avwp_results.csv", index=False)
