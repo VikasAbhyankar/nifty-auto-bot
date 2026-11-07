@@ -6,7 +6,7 @@ from datetime import date
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN") or os.getenv("BOT_TOKEN") or ""
 CHAT_ID_RAW = os.getenv("TELEGRAM_CHAT_ID") or os.getenv("CHAT_ID") or ""
 CHAT_IDS = [x.strip() for x in CHAT_ID_RAW.replace(" ", ",").split(",") if x.strip()]
-CAPITAL = float(os.getenv("CAPITAL") or 100000)  # Set CAPITAL=100000 in GitHub secrets
+CAPITAL = float(os.getenv("CAPITAL") or 100000)
 
 def send_telegram(msg):
     for cid in CHAT_IDS:
@@ -65,9 +65,14 @@ def analyze(df):
     elif price>=high20*0.98: points+=10
     if 60<=rsi<=75: points+=20
     elif 55<=rsi<=80: points+=10
-    t1 = price+1.5*atr; t2 = price+3*atr; sl = max(ema20, price-1.2*atr)
+    # ENTRY + TARGETS
+    entry = price  # Current close as entry
+    t1 = price + 1.5*atr
+    t2 = price + 3.0*atr  # T2 = Double of T1
+    sl = max(ema20, price - 1.2*atr)
     risk_per_share = price - sl
-    rr = (t1-price)/risk_per_share if risk_per_share>0 else 0
+    rr1 = (t1-price)/risk_per_share if risk_per_share>0 else 0
+    rr2 = (t2-price)/risk_per_share if risk_per_share>0 else 0
     wins=0; tot=0
     for i in range(20,len(df)-5):
         if df['Close'].iloc[i]>df['EMA20'].iloc[i] and df['EMA20'].iloc[i]>df['EMA50'].iloc[i]:
@@ -76,9 +81,8 @@ def analyze(df):
     winp = int(wins/tot*100) if tot>0 else 50
     winp = min(95, max(45, winp + (points-60)//2))
     is_sniper = price>avwap and price>ema20 and vr>1.2
-    # POSITION SIZE SCORE
-    score_weight = (winp * points * (1 + rr))  # Higher win + points + RR = bigger size
-    return {"price":price,"points":points,"rsi":rsi,"vr":vr,"t1":t1,"t2":t2,"sl":sl,"risk":risk_per_share,"rr":rr,"win":winp,"avwap":avwap,"sniper":is_sniper,"breakout":price>=high20*0.98,"trend":price>ema20 and ema20>ema50,"weight":score_weight}
+    weight = (winp * points * (1 + rr1))
+    return {"price":price,"entry":entry,"points":points,"vr":vr,"t1":t1,"t2":t2,"sl":sl,"risk":risk_per_share,"rr1":rr1,"rr2":rr2,"win":winp,"avwap":avwap,"sniper":is_sniper,"breakout":price>=high20*0.98,"trend":price>ema20 and ema20>ema50,"weight":weight}
 
 def main():
     regime, nscore, nprice, natr = get_nifty()
@@ -95,38 +99,30 @@ def main():
             if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.droplevel(0)
             if len(df)<30 or df['Close'].isna().all(): continue
             res = analyze(df)
-            if res and res['points']>=60 and res['win']>=65:  # Only 65%+ win for safety
+            if res and res['points']>=60 and res['win']>=65:
                 picks.append({"sym":sym, **res})
         except: continue
     
-    # Sort by weight
-    picks = sorted(picks, key=lambda x: x['weight'], reverse=True)[:10]
-    
-    # Calculate position sizing
+    picks = sorted(picks, key=lambda x: x['weight'], reverse=True)[:9]
     total_weight = sum([p['weight'] for p in picks]) if picks else 1
     for p in picks:
         p['alloc_pct'] = (p['weight'] / total_weight) * 100
         p['alloc_value'] = (CAPITAL * p['alloc_pct'] / 100)
-        # Risk 1.5% per trade max
         risk_amount = CAPITAL * 0.015
         qty_by_risk = int(risk_amount / p['risk']) if p['risk']>0 else 0
         qty_by_capital = int(p['alloc_value'] / p['price'])
-        p['qty'] = min(qty_by_risk, qty_by_capital)  # Safer of two
-        p['qty'] = max(1, p['qty'])  # At least 1
+        p['qty'] = min(qty_by_risk, qty_by_capital)
+        p['qty'] = max(1, p['qty'])
 
-    msg = f"🤖 MASTER BOT 500 - {date.today()}\n"
+    msg = f"🤖 MASTER BOT 500 V8.4 - {date.today()}\n"
     msg += f"NIFTY {nprice:.0f} Score:{nscore}/100 {regime}\n"
-    msg += f"Capital: Rs.{int(CAPITAL):,} | Risk: 1.5%/trade\n"
-    msg += f"{'✅ TRADE' if nscore>=60 else '🛑 NO TRADE'} | {len(symbols)} scanned\n"
+    msg += f"Capital: Rs.{int(CAPITAL):,} | {len(symbols)} scanned\n"
     msg += f"--------------------------\n"
-    msg += f"📈 TOP SAFE (Win>=65%):\n"
     for i,p in enumerate(picks,1):
-        msg += f"{i}. {p['sym']} {p['price']:.0f} {p['win']}% {p['points']}pts\n"
-        msg += f"   QTY:{p['qty']} ({p['alloc_pct']:.0f}%) Val:Rs.{int(p['alloc_value']):,}\n"
-        msg += f"   ->{p['t1']:.0f} SL:{p['sl']:.0f} RR:{p['rr']:.1f}\n"
-    
-    msg += f"\n💡 Size = Win% x Points x RR\n"
-    msg += f"BHARTIARTL 95% = Largest size"
+        msg += f"{i}. {p['sym']} {p['win']}% {p['points']}pts\n"
+        msg += f"   ENTRY:{p['entry']:.0f} QTY:{p['qty']} ({p['alloc_pct']:.0f}%)\n"
+        msg += f"   T1:{p['t1']:.0f} T2:{p['t2']:.0f} SL:{p['sl']:.0f}\n"
+        msg += f"   RR1:{p['rr1']:.1f} RR2:{p['rr2']:.1f} Vol:{p['vr']:.1f}x\n\n"
     
     print(msg)
     send_telegram(msg)
