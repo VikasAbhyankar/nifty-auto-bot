@@ -2,7 +2,7 @@
 import os, json, requests, yfinance as yf
 import pandas as pd
 from datetime import datetime
-from paper_trading import add_new_trade, update_open_trades, generate_summary
+from paper_trading import add_paper_trade, update_open_trades, generate_summary
 BOT_TOKEN = os.getenv("BOT_TOKEN") or os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID") or os.getenv("TELEGRAM_CHAT_ID")
 
@@ -59,11 +59,9 @@ def get_cpr_and_trend(symbol="^NSEI"):
         print(f"CPR Error {symbol} {e}"); return None
 
 def get_top3(nifty_signal=""):
-    # V4.1 FIX 1: Don't trade if Nifty Bearish
     if "BEARISH" in nifty_signal:
         print(f"Nifty Bearish - No trades today: {nifty_signal}")
         return [], 0
-
     symbols=["RELIANCE.NS","TCS.NS","HDFCBANK.NS","ICICIBANK.NS","INFY.NS","BHARTIARTL.NS","ITC.NS","SBIN.NS","LT.NS","HINDUNILVR.NS","BAJFINANCE.NS","MARUTI.NS","SUNPHARMA.NS","KOTAKBANK.NS","HCLTECH.NS","M&M.NS","NTPC.NS","AXISBANK.NS","ULTRACEMCO.NS","TITAN.NS","ASIANPAINT.NS","ADANIENT.NS","ADANIPORTS.NS","BAJAJFINSV.NS","WIPRO.NS","POWERGRID.NS","COALINDIA.NS","HINDALCO.NS","JSWSTEEL.NS","TATASTEEL.NS","ONGC.NS","GRASIM.NS","CIPLA.NS","BPCL.NS","EICHERMOT.NS","BAJAJ-AUTO.NS","DRREDDY.NS","SBILIFE.NS","HDFCLIFE.NS","TECHM.NS","BRITANNIA.NS","APOLLOHOSP.NS","DIVISLAB.NS","INDUSINDBK.NS","VEDL.NS","LTIM.NS","PIDILITIND.NS","TRENT.NS","HAL.NS","BEL.NS","RECLTD.NS","PFC.NS","TATAPOWER.NS"]
     results=[]
     for sym in symbols:
@@ -76,13 +74,10 @@ def get_top3(nifty_signal=""):
             ema9=float(close.ewm(span=9).mean().iloc[-1]); ema21=float(close.ewm(span=21).mean().iloc[-1]); ema50=float(close.ewm(span=50).mean().iloc[-1])
             rsi=calc_rsi(close); avg_v=float(vol.tail(10).mean()); last_v=float(vol.iloc[-1]); volx=last_v/avg_v if avg_v>0 else 1
             pivot=(y_h+y_l+y_c)/3; bc=(y_h+y_l)/2; tc=pivot-bc+pivot
-            # V4.1 FIX 2: Strong CPR Filter + EMA Filter
-            if lc < bc: continue  # SKIP if below BC - This was killing your win rate
-            if ema9 < ema21: continue  # SKIP if EMA bearish
-            
+            if lc < bc: continue
+            if ema9 < ema21: continue
             ema_gap=((ema9-ema21)/ema21*100) if ema21!=0 else 0; tc_gap=((lc-tc)/tc*100) if tc!=0 else 0
             score=0
-            # V4.1 FIX 3: New scoring
             if ema9 > ema21 and lc > ema21: score+=3.0
             elif ema9 > ema21: score+=1.5
             if lc > tc: score+=2.5
@@ -90,10 +85,9 @@ def get_top3(nifty_signal=""):
             if 60<=rsi<=70: score+=2.5
             elif 55<=rsi<=75: score+=2.0
             elif 50<=rsi<=78: score+=1.2
-            else: continue # RSI not in range skip
+            else: continue
             score+=min(2.0,volx*0.8)
             if lc>ema50: score+=1.0
-            
             if score < 7.5: continue
             results.append({"symbol":sym.replace(".NS",""),"price":lc,"score":round(score,2),"rsi":round(rsi,1),"volx":round(volx,1),"ema_gap":round(ema_gap,2),"tc_gap":round(tc_gap,2)})
         except: continue
@@ -105,9 +99,14 @@ def main():
     nifty=get_cpr_and_trend("^NSEI")
     bank=get_cpr_and_trend("^NSEBANK")
     top3, qualified = get_top3(nifty['signal'] if nifty else "")
+
     update_open_trades()
-    for stock in top3:
-        add_paper_trade(stock['symbol'], stock['buy'], stock['sl'], stock['tgt'], stock['qty'])
+    for s in top3:
+        price = s['price']
+        sl = round(price * 0.975, 2)
+        tgt = round(price * 1.035, 2)
+        qty = max(1, int(33333 / (price - sl))) if price != sl else 1
+        add_paper_trade(s['symbol'], price, sl, tgt, qty)
     paper_summary = generate_summary()
 
     try:
@@ -138,17 +137,18 @@ CPR: TC {bank['tc']:.0f} P {bank['pivot']:.0f} BC {bank['bc']:.0f}
 Scanned 54 | Qualified {qualified} | Filter: Nifty Bull + Above BC + EMA9>21
 """
     for i,s in enumerate(top3,1):
-        sl=s['price']*0.975; t1=s['price']*1.02; t2=s['price']*1.035 # V4.1 SL 2.5% 
+        sl=s['price']*0.975; t1=s['price']*1.02; t2=s['price']*1.035
         msg+=f"{i}. {s['symbol']} @ {s['price']:.0f} SCORE {s['score']}/10 BUY\n SL {sl:.0f} (2.5%) TGT {t1:.0f}/{t2:.0f} | EMA+{s['ema_gap']}% TC+{s['tc_gap']}% RSI {s['rsi']} Vol {s['volx']}x\n\n"
-    
+
     if not top3:
         msg+="No Trade Today - Nifty Bearish or No stock Above BC with Score 7.5+ - Capital Protected! 🛡️\n\n"
 
-    msg+=f"Self-Learning: Bull {nifty['bull']} vs Bear {nifty['bear']}\nRule: Trade only if Nifty Bullish + Stock Above TC"
-msg += f"\n\n{paper_summary}"
+    msg+=f"Self-Learning: Bull {nifty['bull']} vs Bear {nifty['bear']}\nRule: Trade only if Nifty Bullish + Stock Above TC\n"
+    msg+=f"\n\n{paper_summary}"
     print(msg)
     send_telegram(msg)
     with open("nifty_memory.json","w") as f:
         json.dump({"days":days+1,"last_nifty":nifty['signal'],"last_bank":bank['signal'],"top3":top3,"last_run":str(datetime.now())},f,indent=2)
 
-if __name__=="__main__": main()
+if __name__=="__main__":
+    main()
