@@ -1,8 +1,14 @@
-# Nifty + BankNifty + Top3 + Self-Learning V4.1 - DAY TRADING FIXED
+# Nifty + BankNifty + Top3 + Self-Learning V4.2 - FIXED for new paper_trading
 import os, json, requests, yfinance as yf
 import pandas as pd
 from datetime import datetime
-from paper_trading import add_paper_trade, update_open_trades, generate_summary
+
+# This works with BOTH old and new paper_trading.py
+try:
+    from paper_trading import add_paper_trade, update_open_trades, generate_summary
+except ImportError:
+    from paper_trading import add_paper_trade, update_paper_trades as update_open_trades, get_summary as generate_summary
+
 BOT_TOKEN = os.getenv("BOT_TOKEN") or os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID") or os.getenv("TELEGRAM_CHAT_ID")
 
@@ -13,6 +19,8 @@ def send_telegram(msg):
     try:
         r = requests.post(url, json={"chat_id": CHAT_ID, "text": msg}, timeout=20)
         print(f"Telegram {r.status_code}")
+        if r.status_code != 200:
+            print(r.text)
     except Exception as e:
         print(f"Telegram error {e}")
 
@@ -95,9 +103,15 @@ def get_top3(nifty_signal=""):
     return results[:3], len(results)
 
 def main():
-    print("V4.1 DAY TRADING FIXED Starting...")
+    print("V4.2 FIXED Starting...")
     nifty=get_cpr_and_trend("^NSEI")
     bank=get_cpr_and_trend("^NSEBANK")
+    
+    if not nifty:
+        print("Nifty data failed, retry...")
+        send_telegram("⚠️ Nifty data download failed today - yfinance issue")
+        return
+
     top3, qualified = get_top3(nifty['signal'] if nifty else "")
 
     update_open_trades()
@@ -105,8 +119,10 @@ def main():
         price = s['price']
         sl = round(price * 0.975, 2)
         tgt = round(price * 1.035, 2)
-        qty = max(1, int(33333 / (price - sl))) if price != sl else 1
+        risk = price - sl
+        qty = max(1, int(33333 / risk)) if risk > 0 else 10
         add_paper_trade(s['symbol'], price, sl, tgt, qty)
+    
     paper_summary = generate_summary()
 
     try:
@@ -114,9 +130,12 @@ def main():
         days=mem.get("days",247)
     except: days=247
 
-    msg=f"""NIFTY PIVOT BOSS V4.1 DAY FIXED 🧠
+    bank_text = f"Live: {bank['live']:.0f} Diff: {bank['diff']:+.0f} Signal: {bank['signal']}" if bank else "BankNifty data unavailable"
+    bank_cpr = f"CPR: TC {bank['tc']:.0f} P {bank['pivot']:.0f} BC {bank['bc']:.0f}" if bank else ""
+
+    msg=f"""NIFTY PIVOT BOSS V4.2 FIXED 🧠
 Date: {datetime.now().strftime('%d-%b %Y %I:%M %p')}
-Memory: {days} days | Win Rate Fixed 65%+
+Memory: {days} days
 
 --- NIFTY50 ---
 Live: {nifty['live']:.0f} Prev: {nifty['prev_c']:.0f} Diff: {nifty['diff']:+.0f}
@@ -128,27 +147,32 @@ S: S1 {nifty['s1']:.0f} S2 {nifty['s2']:.0f} S3 {nifty['s3']:.0f}
 EMA9 {nifty['ema9']:.0f} EMA21 {nifty['ema21']:.0f} RSI {nifty['rsi']:.0f}
 
 --- BANKNIFTY ---
-Live: {bank['live']:.0f} Diff: {bank['diff']:+.0f}
-Signal: {bank['signal']}
-Reason: {', '.join(bank['reasons'])}
-CPR: TC {bank['tc']:.0f} P {bank['pivot']:.0f} BC {bank['bc']:.0f}
+{bank_text}
+{bank_cpr}
 
 --- TOP 3 DAY TRADES (CPR Filtered) ---
-Scanned 54 | Qualified {qualified} | Filter: Nifty Bull + Above BC + EMA9>21
+Scanned 54 | Qualified {qualified}
 """
     for i,s in enumerate(top3,1):
         sl=s['price']*0.975; t1=s['price']*1.02; t2=s['price']*1.035
-        msg+=f"{i}. {s['symbol']} @ {s['price']:.0f} SCORE {s['score']}/10 BUY\n SL {sl:.0f} (2.5%) TGT {t1:.0f}/{t2:.0f} | EMA+{s['ema_gap']}% TC+{s['tc_gap']}% RSI {s['rsi']} Vol {s['volx']}x\n\n"
+        msg+=f"{i}. {s['symbol']} @ {s['price']:.0f} SCORE {s['score']}/10 BUY\n SL {sl:.0f} TGT {t1:.0f}/{t2:.0f} | EMA+{s['ema_gap']}% TC+{s['tc_gap']}% RSI {s['rsi']} Vol {s['volx']}x\n\n"
 
     if not top3:
         msg+="No Trade Today - Nifty Bearish or No stock Above BC with Score 7.5+ - Capital Protected! 🛡️\n\n"
 
-    msg+=f"Self-Learning: Bull {nifty['bull']} vs Bear {nifty['bear']}\nRule: Trade only if Nifty Bullish + Stock Above TC\n"
-    msg+=f"\n\n{paper_summary}"
+    msg+=f"\n{paper_summary}"
     print(msg)
     send_telegram(msg)
+    
+    # Save results CSV for nifty500 workflow
+    try:
+        df_out = pd.DataFrame(top3)
+        df_out.to_csv("nifty500_results.csv", index=False)
+    except:
+        pass
+
     with open("nifty_memory.json","w") as f:
-        json.dump({"days":days+1,"last_nifty":nifty['signal'],"last_bank":bank['signal'],"top3":top3,"last_run":str(datetime.now())},f,indent=2)
+        json.dump({"days":days+1,"last_nifty":nifty['signal'],"last_bank":bank['signal'] if bank else "NA","top3":top3,"last_run":str(datetime.now())},f,indent=2)
 
 if __name__=="__main__":
     main()
