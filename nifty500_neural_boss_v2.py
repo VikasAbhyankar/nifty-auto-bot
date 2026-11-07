@@ -2,7 +2,7 @@
 import os, json, requests, yfinance as yf
 import pandas as pd
 from datetime import datetime
-
+from paper_trading import add_new_trade, update_open_trades, generate_summary
 BOT_TOKEN = os.getenv("BOT_TOKEN") or os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID") or os.getenv("TELEGRAM_CHAT_ID")
 
@@ -105,7 +105,11 @@ def main():
     nifty=get_cpr_and_trend("^NSEI")
     bank=get_cpr_and_trend("^NSEBANK")
     top3, qualified = get_top3(nifty['signal'] if nifty else "")
-
+# Paper trading integration
+update_open_trades()
+for stock in top3:
+    add_new_trade(stock['symbol'], stock['entry'], stock['sl'], stock['tgt1'], stock['tgt2'], stock.get('score',''))
+paper_summary = generate_summary()
     try:
         with open("nifty_memory.json","r") as f: mem=json.load(f)
         days=mem.get("days",247)
@@ -141,7 +145,7 @@ Scanned 54 | Qualified {qualified} | Filter: Nifty Bull + Above BC + EMA9>21
         msg+="No Trade Today - Nifty Bearish or No stock Above BC with Score 7.5+ - Capital Protected! 🛡️\n\n"
 
     msg+=f"Self-Learning: Bull {nifty['bull']} vs Bear {nifty['bear']}\nRule: Trade only if Nifty Bullish + Stock Above TC"
-
+msg += f"\n\n{paper_summary}"
     print(msg)
     send_telegram(msg)
     with open("nifty_memory.json","w") as f:
