@@ -1,5 +1,6 @@
 name: sniper
-
+permissions:
+  contents: write
 on:
   schedule:
     - cron: '*/15 3-10 * * 1-5'
