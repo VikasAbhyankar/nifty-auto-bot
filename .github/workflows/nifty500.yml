@@ -1,37 +1,49 @@
-name: Nifty500 Top3 Neural
+name: nifty500
+permissions:
+  contents: write
 
 on:
   schedule:
-    - cron: '*/15 3-10 * * 1-5'
+    - cron: '30 3 * * 1-5'   # 9:00 AM IST Mon-Fri
   workflow_dispatch:
 
 jobs:
-  run:
+  run-screener:
     runs-on: ubuntu-latest
+    
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Setup Python
-        uses: actions/setup-python@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Install dependencies
+      - name: Install deps
         run: |
-          pip install yfinance pandas numpy requests --quiet
+          pip install yfinance pandas requests --quiet
 
-      - name: Run Nifty500 Neural Boss V2
-        env:
-          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
-          CHAT_ID: ${{ secrets.CHAT_ID }}
+      - name: Run python nifty500 screener
         run: |
-          python nifty500_neural_boss_v2.py
+          python nifty500_screener.py
 
-      - name: Save memory
+      - name: Commit CSV files
         run: |
-          git config user.name "bot"
-          git config user.email "bot@bot.com"
-          git add v4_memory.json || true
-          git commit -m "memory save" || true
-          git push || true
+          git config --local user.email "bot@github.com"
+          git config --local user.name "Trading Bot"
+          git pull --rebase || true
+          git add paper_trades.csv nifty500_results.csv sniper_avwp_results.csv *.csv || true
+          git commit -m "Update trades - $(date +'%d-%b %H:%M IST')" || echo "No changes to commit"
+          git push || echo "Push failed - check Settings > Actions > Read/Write permission"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: results-${{ github.run_number }}
+          path: |
+            *.csv
+          if-no-files-found: warn
