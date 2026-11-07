@@ -1,21 +1,46 @@
-name: Sniper AVWP Screener - 15 Min
+name: sniper
+
 on:
   schedule:
-    - cron: '*/15 * * * *'
+    - cron: '*/15 3-10 * * 1-5'
   workflow_dispatch:
+
 jobs:
-  sniper:
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
-      - run: pip install yfinance pandas requests pytz
-      - env:
+          python-version: '3.11'
+
+      - name: Install deps
+        run: pip install yfinance pandas requests pytz
+
+      - name: Run python sniper_avwp_screener.py
+        env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
-          SNIPER_BOT_TOKEN: ${{ secrets.SNIPER_BOT_TOKEN }}
-          SNIPER_CHAT_ID: ${{ secrets.SNIPER_CHAT_ID }}
-          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          SNIPER_BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          SNIPER_CHAT_ID: ${{ secrets.CHAT_ID }}
         run: python sniper_avwp_screener.py
+
+      - name: Commit CSV files
+        run: |
+          git config --local user.email "bot@github.com"
+          git config --local user.name "Trading Bot"
+          git pull --rebase || true
+          git add paper_trades.csv sniper_avwp_results.csv || true
+          git commit -m "Update trades - $(date +'%d-%b %H:%M IST')" || echo "No changes"
+          git push || echo "Push failed"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: trading-results
+          path: |
+            paper_trades.csv
+            sniper_avwp_results.csv
