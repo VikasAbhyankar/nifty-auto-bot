@@ -1,0 +1,25 @@
+name: Augmented AI Brain
+on:
+  schedule:
+    - cron: '30 3 * * 1-5' # 9:00 AM IST
+  workflow_dispatch:
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - run: pip install yfinance pandas numpy requests
+      - run: python augmented_ai_screener.py
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      - run: |
+          git config --global user.name "AI Bot"
+          git config --global user.email "bot@ai.com"
+          git add ai_memory.csv || true
+          git commit -m "AI memory update" || true
+          git push || true
