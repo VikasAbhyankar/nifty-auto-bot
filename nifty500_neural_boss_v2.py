@@ -105,11 +105,11 @@ def main():
     nifty=get_cpr_and_trend("^NSEI")
     bank=get_cpr_and_trend("^NSEBANK")
     top3, qualified = get_top3(nifty['signal'] if nifty else "")
-# Paper trading integration
-update_open_trades()
-for stock in top3:
-    add_new_trade(stock['symbol'], stock['entry'], stock['sl'], stock['tgt1'], stock['tgt2'], stock.get('score',''))
-paper_summary = generate_summary()
+    update_open_trades()
+    for stock in top3:
+        add_paper_trade(stock['symbol'], stock['buy'], stock['sl'], stock['tgt'], stock['qty'])
+    paper_summary = generate_summary()
+
     try:
         with open("nifty_memory.json","r") as f: mem=json.load(f)
         days=mem.get("days",247)
