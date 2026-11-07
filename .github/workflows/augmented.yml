@@ -1,25 +1,41 @@
 name: Augmented AI Brain
+
 on:
   schedule:
-    - cron: '30 3 * * 1-5' # 9:00 AM IST
+    - cron: '30 3 * * 1-5'  # 9:00 AM IST (3:30 UTC) Mon-Fri
   workflow_dispatch:
 
 jobs:
-  run:
+  run-ai-brain:
     runs-on: ubuntu-latest
+    
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-      - run: pip install yfinance pandas numpy requests
-      - run: python augmented_ai_screener.py
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install yfinance pandas numpy requests
+
+      - name: Run Augmented AI Screener
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-      - run: |
-          git config --global user.name "AI Bot"
-          git config --global user.email "bot@ai.com"
-          git add ai_memory.csv || true
-          git commit -m "AI memory update" || true
-          git push || true
+          BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python augmented_ai_screener.py
+
+      - name: Save AI Memory
+        run: |
+          git config --global user.name "AI-Brain-Bot"
+          git config --global user.email "ai-bot@nifty-auto-bot.com"
+          git add ai_memory.csv || echo "No memory file to add"
+          git diff --staged --quiet || git commit -m "🧠 AI Brain Memory Update - $(date)"
+          git push || echo "Nothing to push"
