@@ -4,163 +4,90 @@ import numpy as np
 import requests, os, json, datetime
 from datetime import date
 
-# ========= CONFIG =========
-BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-CHAT_IDS = os.getenv("TELEGRAM_CHAT_ID", "").split(",")
-NIFTY_SYMBOL = "^NSEI"
+BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN") or os.getenv("BOT_TOKEN")
+CHAT_ID_RAW = os.getenv("TELEGRAM_CHAT_ID") or os.getenv("CHAT_ID") or ""
+CHAT_IDS = [x.strip() for x in CHAT_ID_RAW.split(",") if x.strip()]
 MEMORY_FILE = "ai_memory.csv"
-PAPER_FILE = "paper_trades.csv"
+
+print(f"DEBUG: BOT_TOKEN exists? {bool(BOT_TOKEN)}")
+print(f"DEBUG: CHAT_ID_RAW = '{CHAT_ID_RAW}' -> {CHAT_IDS}")
 
 def send_telegram(msg):
-    if not BOT_TOKEN: return
+    if not BOT_TOKEN or not CHAT_IDS:
+        print(f"ERROR: Token or Chat ID missing! Token={bool(BOT_TOKEN)} IDs={CHAT_IDS}")
+        return
     for cid in CHAT_IDS:
-        cid = cid.strip()
-        if not cid: continue
         try:
             url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-            requests.post(url, json={"chat_id": cid, "text": msg, "parse_mode": "Markdown"}, timeout=10)
+            r = requests.post(url, json={"chat_id": cid, "text": msg, "parse_mode": "Markdown"}, timeout=15)
+            print(f"Telegram send to {cid}: Status {r.status_code} - {r.text[:200]}")
         except Exception as e:
             print(f"Telegram fail {cid}: {e}")
 
-# ========= AI-1: MARKET REGIME DETECTOR =========
 def get_market_regime():
     try:
-        nifty = yf.download(NIFTY_SYMBOL, period="3mo", interval="1d", progress=False)
-        if len(nifty) < 30: return "UNKNOWN", "Not enough data"
+        nifty = yf.download("^NSEI", period="3mo", interval="1d", progress=False, auto_adjust=True)
         nifty['EMA20'] = nifty['Close'].ewm(span=20).mean()
         nifty['ATR'] = (nifty['High'] - nifty['Low']).rolling(14).mean()
-        
         last = nifty.iloc[-1]
-        prev = nifty.iloc[-2]
-        price = float(last['Close'])
-        ema = float(last['EMA20'])
-        atr = float(last['ATR'])
+        price = float(last['Close'].iloc[0] if hasattr(last['Close'], 'iloc') else last['Close'])
+        ema = float(last['EMA20'].iloc[0] if hasattr(last['EMA20'], 'iloc') else last['EMA20'])
+        atr = float(last['ATR'].iloc[0] if hasattr(last['ATR'], 'iloc') else last['ATR'])
         atr_pct = (atr / price) * 100
-
-        # Regime Logic
         if price > ema and atr_pct > 1.2:
             regime = "TRENDING_BULL"
             reason = f"Nifty {price:.0f} > 20EMA, ATR {atr_pct:.1f}% - Bull Momentum"
         elif price < ema and atr_pct > 1.2:
             regime = "TRENDING_BEAR"
-            reason = f"Nifty {price:.0f} < 20EMA, ATR {atr_pct:.1f}% - Bear Momentum"
+            reason = f"Nifty {price:.0f} < 20EMA, ATR {atr_pct:.1f}% - Bear"
         elif atr_pct < 0.8:
             regime = "RANGE_LOW_VOL"
-            reason = f"ATR {atr_pct:.1f}% low - Range Day, AVOID trading"
+            reason = f"ATR {atr_pct:.1f}% low - Range Day"
         else:
-            regime = "RANGE_HIGH_VOL"
-            reason = f"Choppy day, ATR {atr_pct:.1f}%"
-        
-        # Swing High/Low
-        swing_high = float(nifty['High'].tail(20).max())
-        swing_low = float(nifty['Low'].tail(20).min())
-        
+            regime = "RANGE"
+            reason = f"Choppy, ATR {atr_pct:.1f}%"
+        swing_high = float(nifty['High'].tail(20).max().iloc[0])
+        swing_low = float(nifty['Low'].tail(20).min().iloc[0])
         return regime, reason, swing_high, swing_low
     except Exception as e:
-        return "UNKNOWN", str(e), 0, 0
+        print(f"Regime fail {e}")
+        return "UNKNOWN", str(e), 25000, 24000
 
-# ========= AI-2: OPTION FLOW ENGINE =========
 def get_option_flow():
+    # NSE blocks GitHub IP, so we use fallback
     try:
-        # NSE Option Chain - needs session
-        headers = {
-            "User-Agent": "Mozilla/5.0",
-            "Accept": "application/json",
-            "Referer": "https://www.nseindia.com/"
-        }
+        headers = {"User-Agent": "Mozilla/5.0"}
         sess = requests.Session()
         sess.get("https://www.nseindia.com", headers=headers, timeout=10)
         url = "https://www.nseindia.com/api/option-chain-indices?symbol=NIFTY"
-        r = sess.get(url, headers=headers, timeout=10).json()
-        
-        data = r['records']['data']
-        total_ce_oi = sum([x['CE']['openInterest'] for x in data if 'CE' in x])
-        total_pe_oi = sum([x['PE']['openInterest'] for x in data if 'PE' in x])
-        
-        pcr = total_pe_oi / total_ce_oi if total_ce_oi > 0 else 0
-        
-        # Find max pain / support resistance
-        ce_oi = {}
-        pe_oi = {}
-        for x in data:
-            if 'CE' in x: ce_oi[x['strikePrice']] = x['CE']['openInterest']
-            if 'PE' in x: pe_oi[x['strikePrice']] = x['PE']['openInterest']
-        
-        resistance = max(ce_oi, key=ce_oi.get) if ce_oi else 0
-        support = max(pe_oi, key=pe_oi.get) if pe_oi else 0
-        
-        flow_msg = ""
-        if pcr > 1.3: flow_msg = "HEAVY Put writing - Institutional BULLISH"
-        elif pcr < 0.7: flow_msg = "HEAVY Call writing - Institutional BEARISH"
-        else: flow_msg = "Neutral PCR"
-
-        return pcr, support, resistance, flow_msg
+        r = sess.get(url, headers=headers, timeout=10)
+        j = r.json()
+        data = j['records']['data']
+        total_ce = sum([x['CE']['openInterest'] for x in data if 'CE' in x])
+        total_pe = sum([x['PE']['openInterest'] for x in data if 'PE' in x])
+        pcr = total_pe/total_ce if total_ce>0 else 1.0
+        ce_oi = {x['strikePrice']: x['CE']['openInterest'] for x in data if 'CE' in x}
+        pe_oi = {x['strikePrice']: x['PE']['openInterest'] for x in data if 'PE' in x}
+        res = max(ce_oi, key=ce_oi.get) if ce_oi else 0
+        sup = max(pe_oi, key=pe_oi.get) if pe_oi else 0
+        msg = "Bullish" if pcr>1.2 else "Bearish" if pcr<0.8 else "Neutral"
+        return pcr, sup, res, msg
     except Exception as e:
-        print(f"Option flow fail: {e}")
-        return 1.0, 0, 0, "Option data unavailable"
+        print(f"Option flow fail: {e} - Using PCR=1.0 fallback")
+        return 1.0, 0, 0, "NSE blocked (fallback)"
 
-# ========= MAIN BRAIN =========
 def main():
-    regime, reason, swing_high, swing_low = get_market_regime()
-    # get_market_regime now returns 4 values
-    if isinstance(regime, tuple): # fix for old call
-        regime, reason, swing_high, swing_low = regime
-
-    pcr, support, resistance, flow_msg = get_option_flow()
-
-    # DECISION LOGIC - This is your risk controller
-    should_trade = True
-    block_reason = ""
-    if regime == "RANGE_LOW_VOL":
-        should_trade = False
-        block_reason = "Market in low volatility range - AI blocked trades to save capital"
-    if pcr < 0.6 or pcr > 1.6:
-        should_trade = False
-        block_reason = f"Extreme PCR {pcr:.2f} - Institutional panic, AI blocked"
-
-    # Build Message
-    msg = f"""🤖 *AUGMENTED AI BRAIN - Market Check*
-📅 {date.today()}
-
-*1. Market Regime:* {regime}
-   {reason}
-   Swing High: {swing_high:.0f} | Low: {swing_low:.0f}
-
-*2. Option Flow:* 
-   PCR: {pcr:.2f} - {flow_msg}
-   Support: {support} (Max PE OI)
-   Resistance: {resistance} (Max CE OI)
-
-*3. AI Decision:*
-"""
-    if should_trade:
-        msg += "✅ *TRADE ALLOWED* - Running Nifty500 + Sniper logic next...\n"
-        msg += "AI Learning: Will track today's trades in ai_memory.csv"
-        # Here you call your existing screeners logic
-        # For now we just log
-    else:
-        msg += f"🛑 *NO TRADE TODAY* - {block_reason}\n"
-        msg += "Capital Protected - This is AI Risk Control working!"
-
-    print(msg)
-    send_telegram(msg)
-
-    # Save to memory for self-learning
-    mem_row = {
-        "date": str(date.today()),
-        "regime": regime,
-        "pcr": pcr,
-        "support": support,
-        "resistance": resistance,
-        "trade_allowed": should_trade,
-        "swing_high": swing_high,
-        "swing_low": swing_low
-    }
-    df_mem = pd.DataFrame([mem_row])
+    regime, reason, sh, sl = get_market_regime()
+    pcr, sup, res, flow = get_option_flow()
+    should = "RANGE_LOW_VOL" not in regime
+    txt = f"🤖 *AUGMENTED AI BRAIN*\nDate: {date.today()}\n\nRegime: {regime}\n{reason}\nSwing H: {sh:.0f} L: {sl:.0f}\n\nPCR: {pcr:.2f} - {flow}\nSupport: {sup} Resist: {res}\n\nDecision: {'✅ TRADE ALLOWED' if should else '🛑 NO TRADE'}"
+    print(txt)
+    send_telegram(txt)
+    df = pd.DataFrame([{"date": str(date.today()), "regime": regime, "pcr": pcr, "trade_allowed": should}])
     if os.path.exists(MEMORY_FILE):
-        df_mem.to_csv(MEMORY_FILE, mode='a', header=False, index=False)
+        df.to_csv(MEMORY_FILE, mode='a', header=False, index=False)
     else:
-        df_mem.to_csv(MEMORY_FILE, index=False)
+        df.to_csv(MEMORY_FILE, index=False)
 
 if __name__ == "__main__":
     main()
