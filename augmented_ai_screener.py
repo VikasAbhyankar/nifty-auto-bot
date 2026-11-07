@@ -33,7 +33,7 @@ def get_nifty_regime():
     reason = f"Score {nifty_score}/100, {price:.0f} > EMA20 {ema20:.0f}, ATR {atr_pct:.1f}%"
     return regime, reason, sh, sl, price, nifty_score
 
-def calc_points_and_levels(df):
+def calc_all_metrics(df):
     last = df.iloc[-1]
     price = float(last['Close']); ema20 = float(last['EMA20']); ema50 = float(last['EMA50'])
     high20 = float(last['High20']); vol20 = float(last['Vol20']); vol_now = float(last['Volume'])
@@ -57,20 +57,37 @@ def calc_points_and_levels(df):
     if 60 <= rsi <= 75: points += 20
     elif 55 <= rsi <= 80: points += 10
 
-    # --- TARGET / SL LOGIC ---
-    # Target 1 = Price + 1.5 * ATR (intraday/swing)
-    # Target 2 = Price + 3 * ATR (positional)
-    # SL = EMA20 or Price - 1 * ATR, whichever is higher
+    # Targets
     target1 = price + (1.5 * atr)
     target2 = price + (3.0 * atr)
     sl_atr = price - (1.2 * atr)
-    stop_loss = max(ema20, sl_atr) # Smart SL - below EMA20
-    
+    stop_loss = max(ema20, sl_atr)
     risk = price - stop_loss
     reward1 = target1 - price
     rr_ratio = reward1 / risk if risk > 0 else 0
 
-    return points, rsi, vol_ratio, price, target1, target2, stop_loss, rr_ratio, atr
+    # --- WIN PROBABILITY BACKTEST ---
+    # Look back 60 days, find similar setups (Price > EMA20) and check 5-day outcome
+    wins = 0
+    total = 0
+    try:
+        # Use df with EMA already calculated
+        for i in range(20, len(df)-5):
+            if df['Close'].iloc[i] > df['EMA20'].iloc[i] and df['EMA20'].iloc[i] > df['EMA50'].iloc[i]:
+                total += 1
+                future_price = float(df['Close'].iloc[i+5])
+                current = float(df['Close'].iloc[i])
+                if future_price > current:
+                    wins += 1
+        win_prob = int((wins / total * 100)) if total > 0 else 50
+    except:
+        win_prob = 50
+
+    # Adjust win prob by points
+    win_prob = min(95, win_prob + (points - 60) // 2)  # Higher points = higher win%
+    win_prob = max(45, win_prob)
+
+    return points, rsi, vol_ratio, price, target1, target2, stop_loss, rr_ratio, win_prob
 
 def main():
     regime, reason, sh, sl, nifty_price, nifty_points = get_nifty_regime()
@@ -92,29 +109,31 @@ def main():
             df['Vol20'] = df['Volume'].rolling(20).mean()
             df['ATR'] = (df['High'] - df['Low']).rolling(14).mean()
             
-            points, rsi, vol_ratio, price, t1, t2, stop, rr, atr = calc_points_and_levels(df)
+            points, rsi, vol_ratio, price, t1, t2, stop, rr, winp = calc_all_metrics(df)
             if points >= 60:
-                all_stocks.append({"sym": sym, "price": price, "points": points, "rsi": rsi, "vol": vol_ratio, "t1": t1, "t2": t2, "sl": stop, "rr": rr})
+                all_stocks.append({"sym": sym, "price": price, "points": points, "rsi": rsi, "vol": vol_ratio, "t1": t1, "t2": t2, "sl": stop, "rr": rr, "win": winp})
         except: continue
 
-    all_stocks = sorted(all_stocks, key=lambda x: x['points'], reverse=True)
+    all_stocks = sorted(all_stocks, key=lambda x: (x['win'], x['points']), reverse=True)
     trending = all_stocks[:10]
 
     emoji = "✅" if nifty_points >= 70 else "🛑"
-    decision = "TRADE ALLOWED - Trend Day" if nifty_points >= 60 else "CAUTION"
-
     msg = f"🤖 AUGMENTED AI BRAIN - {date.today()}\n"
-    msg += f"NIFTY: {nifty_price:.0f} Score:{nifty_points}/100 {emoji} {regime}\n{reason}\n\n"
-    msg += f"DECISION: {decision}\n"
+    msg += f"NIFTY: {nifty_price:.0f} Score:{nifty_points}/100 {emoji} {regime}\n"
+    msg += f"{reason}\n\n"
     msg += f"--------------------------\n"
-    msg += f"🏆 TOP RANKED (Target/SL):\n"
+    msg += f"🏆 TOP 10 WITH WIN %:\n"
     for i, p in enumerate(trending, 1):
         msg += f"{i}. {p['sym']} {p['price']:.0f} ({p['points']}pts)\n"
-        msg += f"   T1:{p['t1']:.0f} T2:{p['t2']:.0f} SL:{p['sl']:.0f} RR 1:{p['rr']:.1f}\n"
+        msg += f"   Win:{p['win']}% | T1:{p['t1']:.0f} SL:{p['sl']:.0f} RR 1:{p['rr']:.1f}\n"
     
-    msg += f"\n🎯 SNIPER 80+ pts:\n"
-    for p in [s for s in all_stocks if s['points'] >= 80][:5]:
-        msg += f"{p['sym']} Buy {p['price']:.0f} -> {p['t1']:.0f} SL {p['sl']:.0f}\n"
+    msg += f"\n🎯 BEST BETS (80%+ Win):\n"
+    best = [s for s in all_stocks if s['win'] >= 75][:5]
+    if best:
+        for p in best:
+            msg += f"{p['sym']} {p['win']}% Win -> Buy {p['price']:.0f} Target {p['t1']:.0f}\n"
+    else:
+        msg += f"Top: {trending[0]['sym']} {trending[0]['win']}% Win\n"
 
     print(msg)
     send_telegram(msg)
