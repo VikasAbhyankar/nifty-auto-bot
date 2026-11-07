@@ -35,15 +35,21 @@ jobs:
           git config --local user.email "bot@github.com"
           git config --local user.name "Trading Bot"
           git pull --rebase || true
-          git add paper_trades.csv nifty500_results.csv sniper_avwp_results.csv *.csv || true
+          git add nifty500_results.csv || true
+          git add paper_trades.csv || true
+          git add nifty_memory.json || true
+          git add sniper_avwp_results.csv || true
+          git add *.csv || true
+          git add *.json || true
           git commit -m "Update trades - $(date +'%d-%b %H:%M IST')" || echo "No changes to commit"
-          git push || echo "Push failed - check Settings > Actions > Read/Write permission"
+          git push
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: results-${{ github.run_number }}
+          name: nifty500-results-${{ github.run_number }}
           path: |
             *.csv
+            *.json
           if-no-files-found: warn
