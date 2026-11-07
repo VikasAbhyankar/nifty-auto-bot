@@ -19,7 +19,7 @@ def send_telegram(msg):
     for cid in CHAT_IDS:
         try:
             url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-            r = requests.post(url, json={"chat_id": cid, "text": msg, "parse_mode": "Markdown"}, timeout=15)
+            r = requests.post(url, json={"chat_id": cid, "text": msg}, timeout=15)
             print(f"Telegram send to {cid}: Status {r.status_code} - {r.text[:200]}")
         except Exception as e:
             print(f"Telegram fail {cid}: {e}")
