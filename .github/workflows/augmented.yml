@@ -1,30 +1,25 @@
-name: Augmented AI Brain
+name: MASTER BOT 500 V8.5 - 2 MSG
+
 on:
   schedule:
-    - cron: '30 3 * * 1-5'
+    - cron: '0 4 * * 1-5'   # 9:30 AM IST - Entry
+    - cron: '15 10 * * 1-5' # 3:45 PM IST - Final
   workflow_dispatch:
+
 jobs:
-  run-ai-brain:
+  run-screener:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
         with:
           python-version: '3.10'
-      - run: pip install yfinance pandas numpy requests
-      - name: Run Augmented AI Screener
+      - name: Install deps
+        run: pip install yfinance pandas requests
+      - name: Run Screener
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
-          CHAT_ID: ${{ secrets.CHAT_ID }}
-          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-          TG_TOKEN: ${{ secrets.TG_TOKEN }}
-          TOKEN: ${{ secrets.TOKEN }}
+          CAPITAL: ${{ secrets.CAPITAL }}
         run: python augmented_ai_screener.py
-      - run: |
-          git config --global user.name "AI-Brain-Bot"
-          git config --global user.email "bot@ai.com"
-          git add ai_memory.csv || true
-          git commit -m "AI Memory Update" || true
-          git push || true
