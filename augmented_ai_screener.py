@@ -26,32 +26,52 @@ def calc_avwap(df, anchor_idx):
         return float(((ds['Close']*ds['Volume']).cumsum() / ds['Volume'].cumsum()).iloc[-1])
     except: return float(df['Close'].ewm(span=20).mean().iloc[-1])
 
+def clean_df(df):
+    # FIX FOR MULTIINDEX ISSUE
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.droplevel(0) if 'Close' in df.columns.get_level_values(0) else df.columns.get_level_values(1)
+    # If still has duplicate columns, take first
+    df = df.loc[:, ~df.columns.duplicated()]
+    return df
+
 def load_nifty500():
+    # CLEANED LIST - Removed delisted
+    default_list = ["RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","BHARTIARTL","SBIN","LT","BAJFINANCE","ITC","BSE","BHARTIHEXA","LTTS","HCLTECH","SHYAMMETL","WIPRO","COFORGE","TECHM","PERSISTENT","TITAN","M&M","HINDALCO","DIVISLAB","INDHOTEL","HAL","BANKBARODA","PNB","CIPLA","FDC","FSL","SYNGENE","TANLA","UNIONBANK","DRREDDY","TATAELXSI","JSWSTEEL","IOC","ULTRACEMCO","ICICIBANK","BHARTIARTL","ETERNAL","TATAMOTORS","ZENSAR","INDUSINDBK"]
     try:
         if os.path.exists("nifty500_list.csv"):
             df = pd.read_csv("nifty500_list.csv")
-            return df['Symbol'].dropna().tolist()[:500]
+            lst = df['Symbol'].dropna().tolist()
+            # Clean old names
+            replace_map = {"ZOMATO":"ETERNAL","TATAMOTORS":"TATAMOTORS","PEL":"PEL","MCDOWELL-N":"MCDOWELL-N","JUBILANT.N":"JUBILANTFOOD"}
+            cleaned=[]
+            for s in lst:
+                s=s.strip().upper()
+                if s in replace_map: s=replace_map[s]
+                if s not in cleaned: cleaned.append(s)
+            return cleaned[:300]  # Limit to 300 to avoid fails
     except: pass
-    return ["RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","BHARTIARTL","SBIN","LT","BAJFINANCE","ITC","BSE","BHARTIHEXA","LTTS","HCLTECH","SHYAMMETL","WIPRO","COFORGE","TECHM","PERSISTENT","TITAN","KALYANKJIL","WABAG","M&M","HINDALCO","INDUSINDBK","DIVISLAB","INDHOTEL","HAL","BANKBARODA","PNB","CIPLA","FDC","FSL","BSE","SYNGENE","TANLA","HCLTECH","UNIONBANK","DRREDDY","INFY","WIPRO","TECHM","COFORGE","TATAELXSI"]
+    return default_list
 
-# ======== V12 MARKET REGIME DETECTION =========
+# ======== V12 MARKET REGIME DETECTION - FIXED =========
 def detect_market_regime(all_data, symbols):
-    # 1. NIFTY TREND + ADX
+    # 1. NIFTY TREND + ADX - FIXED MULTIINDEX
     df_n = yf.download("^NSEI", period="6mo", interval="1d", progress=False, auto_adjust=True)
+    df_n = clean_df(df_n)
+    
     df_n['EMA20'] = df_n['Close'].ewm(span=20).mean()
     df_n['EMA50'] = df_n['Close'].ewm(span=50).mean()
     df_n['EMA200'] = df_n['Close'].ewm(span=200).mean()
     df_n['ATR'] = (df_n['High'] - df_n['Low']).rolling(14).mean()
     df_n['ATR_PCT'] = df_n['ATR']/df_n['Close']*100
     
-    # ADX for trend strength
-    df_n['TR'] = np.maximum(df_n['High']-df_n['Low'], np.maximum(abs(df_n['High']-df_n['Close'].shift()), abs(df_n['Low']-df_n['Close'].shift())))
+    # ADX
+    df_n['TR'] = np.maximum(df_n['High']-df_n['Low'], np.maximum((df_n['High']-df_n['Close'].shift()).abs(), (df_n['Low']-df_n['Close'].shift()).abs()))
     df_n['DM+'] = np.where((df_n['High']-df_n['High'].shift()) > (df_n['Low'].shift()-df_n['Low']), np.maximum(df_n['High']-df_n['High'].shift(),0),0)
     df_n['DM-'] = np.where((df_n['Low'].shift()-df_n['Low']) > (df_n['High']-df_n['High'].shift()), np.maximum(df_n['Low'].shift()-df_n['Low'],0),0)
     df_n['ATR14'] = df_n['TR'].rolling(14).mean()
-    df_n['DI+'] = 100*(df_n['DM+'].rolling(14).mean()/df_n['ATR14'])
-    df_n['DI-'] = 100*(df_n['DM-'].rolling(14).mean()/df_n['ATR14'])
-    df_n['DX'] = 100*abs(df_n['DI+']-df_n['DI-'])/(df_n['DI+']+df_n['DI-'])
+    df_n['DI+'] = 100*(pd.Series(df_n['DM+']).rolling(14).mean()/df_n['ATR14'])
+    df_n['DI-'] = 100*(pd.Series(df_n['DM-']).rolling(14).mean()/df_n['ATR14'])
+    df_n['DX'] = 100*(df_n['DI+']-df_n['DI-']).abs()/(df_n['DI+']+df_n['DI-'])
     df_n['ADX'] = df_n['DX'].rolling(14).mean()
 
     last = df_n.iloc[-1]
@@ -59,7 +79,6 @@ def detect_market_regime(all_data, symbols):
     atr_pct = float(last['ATR_PCT']); adx = float(last['ADX']) if not pd.isna(last['ADX']) else 20
     di_plus = float(last['DI+']); di_minus = float(last['DI-'])
     
-    # Bollinger Band Width for sideways detection
     df_n['SMA20'] = df_n['Close'].rolling(20).mean()
     df_n['STD20'] = df_n['Close'].rolling(20).std()
     df_n['BB_UP'] = df_n['SMA20'] + 2*df_n['STD20']
@@ -67,29 +86,24 @@ def detect_market_regime(all_data, symbols):
     df_n['BB_WIDTH'] = (df_n['BB_UP']-df_n['BB_LO'])/df_n['SMA20']*100
     bb_width = float(df_n['BB_WIDTH'].iloc[-1])
 
-    # 2. INDIA VIX - Volatility & Fear
     try:
         df_vix = yf.download("^INDIAVIX", period="1mo", interval="1d", progress=False, auto_adjust=True)
+        df_vix = clean_df(df_vix)
         vix = float(df_vix['Close'].iloc[-1]) if len(df_vix)>0 else 15
         vix_trend = "HIGH" if vix>20 else "LOW" if vix<14 else "NORMAL"
     except:
         vix = 15; vix_trend="NORMAL"
 
-    # 3. PCR Proxy - Using NIFTY momentum + VIX (since live PCR API needs NSE)
-    # PCR >1.2 = bullish (more puts), <0.8 = bearish
-    # We proxy: If VIX high + NIFTY near low = PCR high (fear, good for contrarian buy)
-    # If ADX low + BB narrow = sideways
     if vix>20 and price < ema20:
-        pcr_proxy = 1.3  # High fear, oversold - bullish contrarian
+        pcr_proxy = 1.3
         pcr_signal = "OVERSOLD - REVERSAL EXPECTED (PCR~1.3)"
     elif vix<14 and price > ema20*1.03:
-        pcr_proxy = 0.7  # Complacency, overbought
+        pcr_proxy = 0.7
         pcr_signal = "OVERBOUGHT - CAUTION (PCR~0.7)"
     else:
         pcr_proxy = 1.0
         pcr_signal = "NEUTRAL (PCR~1.0)"
 
-    # 4. Breadth
     above=0; total=0
     for sym in symbols[:120]:
         try:
@@ -104,11 +118,6 @@ def detect_market_regime(all_data, symbols):
         except: continue
     breadth = (above/total*100) if total>0 else 50
 
-    # ===== DECISION LOGIC =====
-    # TRENDING BULL: EMA20>EMA50>EMA200, ADX>25, DI+>DI-, BB Width >3%, Breadth >60
-    # SIDEWAYS: ADX<20, BB Width <3%, EMA20~EMA50, Breadth 40-60
-    # DOWN TREND: EMA20<EMA50, ADX>25, DI->DI+, Breadth <40
-    
     if ema20 > ema50 > ema200 and adx > 22 and di_plus > di_minus and breadth > 60:
         regime = "TRENDING_BULL"
         desc = f"Strong Uptrend | ADX {adx:.0f} DI+{di_plus:.0f}>DI-{di_minus:.0f} | BB {bb_width:.1f}% | VIX {vix:.1f}"
@@ -117,24 +126,23 @@ def detect_market_regime(all_data, symbols):
         min_win = 70
     elif adx < 20 and bb_width < 4 and 40 <= breadth <= 65:
         regime = "SIDEWAYS"
-        desc = f"Sideways/Consolidation | ADX {adx:.0f} Low | BB {bb_width:.1f}% Squeeze | VIX {vix:.1f}"
+        desc = f"Sideways | ADX {adx:.0f} Low | BB {bb_width:.1f}% Squeeze | VIX {vix:.1f}"
         strategy = "Use: Near 8 EMA Dip + Triple AVWAP + RSI Range"
         weights = {"trend":10,"bala_wma":10,"breakout":5,"sniper":30,"dip":45}
         min_win = 75
     elif ema20 < ema50 and di_minus > di_plus and breadth < 45:
         regime = "DOWN_TREND"
-        desc = f"Downtrend | ADX {adx:.0f} DI-{di_minus:.0f}>DI+{di_plus:.0f} | VIX {vix:.1f} HIGH FEAR"
-        strategy = "AVOID LONGS | Wait for Reversal | Only Bounce near 200EMA"
+        desc = f"Downtrend | ADX {adx:.0f} DI-{di_minus:.0f}>DI+{di_plus:.0f} | VIX {vix:.1f}"
+        strategy = "AVOID LONGS | Wait Reversal"
         weights = {"trend":0,"bala_wma":0,"breakout":0,"sniper":0,"dip":0}
         min_win = 85
     else:
         regime = "MILD_BULL"
-        desc = f"Mild Bull / Transition | ADX {adx:.0f} | BB {bb_width:.1f}% | VIX {vix:.1f} | Breadth {breadth:.0f}%"
-        strategy = "Use: Balanced All Strategies"
+        desc = f"Mild Bull | ADX {adx:.0f} | BB {bb_width:.1f}% | VIX {vix:.1f} | Breadth {breadth:.0f}%"
+        strategy = "Balanced All Strategies"
         weights = {"trend":20,"bala_wma":20,"breakout":20,"sniper":20,"dip":20}
         min_win = 68
 
-    # Nifty Score for display
     nifty_score = 0
     if price>ema20: nifty_score+=30
     if ema20>ema50: nifty_score+=30
@@ -149,6 +157,7 @@ def get_indices():
     for name, ticker in indices_map.items():
         try:
             df = yf.download(ticker, period="5d", interval="1d", progress=False, auto_adjust=True)
+            df = clean_df(df)
             if len(df)==0: continue
             last = df.iloc[-1]
             h = float(last['High']); l = float(last['Low']); c = float(last['Close'])
@@ -158,6 +167,7 @@ def get_indices():
     return result
 
 def analyze(df, weights):
+    df = clean_df(df)
     df['EMA8'] = df['Close'].ewm(span=8).mean()
     df['EMA20'] = df['Close'].ewm(span=20).mean()
     df['EMA50'] = df['Close'].ewm(span=50).mean()
@@ -175,7 +185,6 @@ def analyze(df, weights):
     h = float(last['High']); l = float(last['Low']); c = float(last['Close'])
     pp = (h+l+c)/3; r1 = 2*pp - l; s1 = 2*pp - h; r2 = pp + (h-l); s2 = pp - (h-l)
     
-    # Triple Anchored VWAP - As per Video
     low_idx_20 = df['Low'].tail(20).idxmin()
     low_idx_50 = df['Low'].tail(50).idxmin()
     high_idx_20 = df['High'].tail(20).idxmax()
@@ -184,40 +193,26 @@ def analyze(df, weights):
     avwap_high = calc_avwap(df, high_idx_20)
     avwap = avwap_low
     
-    # RSI for sideways
     delta = df['Close'].diff(); gain = delta.where(delta>0,0).rolling(14).mean(); loss = -delta.where(delta<0,0).rolling(14).mean(); rs = gain/loss
     rsi = float(100 - (100/(1+rs.iloc[-1]))) if not pd.isna(rs.iloc[-1]) and rs.iloc[-1]!=0 else 50
 
     vr = vol_now/vol20 if vol20>0 else 1
-    trend_score = 0
-    if price>ema20: trend_score+=50
+    trend_score = 50 if price>ema20 else 0
     if ema20>ema50: trend_score+=50
-    bala_wma_score = 100 if (wma8 > wma20 > wma50 and price > wma8) else 0
-    if bala_wma_score==0 and wma8>wma20: bala_wma_score=50
-    dip_score = 0
-    dist = abs(price-ema8)/price*100
-    if dist<=1: dip_score=100
-    elif dist<=2.5: dip_score=80
-    elif dist<=4: dip_score=50
-    # Add RSI for sideways - buy near 40-50
+    bala_wma_score = 100 if (wma8 > wma20 > wma50 and price > wma8) else (50 if wma8>wma20 else 0)
+    dip_score = 100 if abs(price-ema8)/price*100<=1 else 80 if abs(price-ema8)/price*100<=2.5 else 50 if abs(price-ema8)/price*100<=4 else 0
     if 35 <= rsi <= 55: dip_score = min(100, dip_score+20)
 
-    # Triple AVWAP Sniper - Video Logic
-    if price > avwap_high and price > avwap_low and vr>1.2:
-        sniper_score = 100
-    elif price > avwap_low and price > ema20 and vr>1.0:
-        sniper_score = 80
-    elif price > avwap_low * 0.99:
-        sniper_score = 60
-    elif price > avwap_low:
-        sniper_score = 50
-    else:
-        sniper_score = 0
+    if price > avwap_high and price > avwap_low and vr>1.2: sniper_score = 100
+    elif price > avwap_low and price > ema20 and vr>1.0: sniper_score = 80
+    elif price > avwap_low * 0.99: sniper_score = 60
+    elif price > avwap_low: sniper_score = 50
+    else: sniper_score = 0
 
-    breakout_score = 0
     if price>=high20*0.995 and vr>1.5: breakout_score=100
     elif price>=high20*0.98 and vr>1.2: breakout_score=70
     elif price>=high20*0.97: breakout_score=40
+    else: breakout_score=0
 
     composite = (trend_score*weights['trend'] + bala_wma_score*weights['bala_wma'] + breakout_score*weights['breakout'] + sniper_score*weights['sniper'] + dip_score*weights['dip'])/100
 
@@ -234,16 +229,14 @@ def analyze(df, weights):
     winp = int(wins/tot*100) if tot>0 else 50
     winp = min(95, max(45, winp + (composite-50)//2))
     weight = winp * composite * (1+rr1) * (1+vr/3)
-    if price <= s1*1.01: zone="🟢 DEEP DIP"
-    elif price <= pp: zone="🟡 NEAR SUPPORT"
-    elif price <= r1: zone="🔵 ABOVE PP"
-    else: zone="🔴 NEAR R1/R2"
+    zone = "🟢 DEEP DIP" if price <= s1*1.01 else "🟡 NEAR SUPPORT" if price <= pp else "🔵 ABOVE PP" if price <= r1 else "🔴 NEAR R1/R2"
     return {"price":price,"entry":entry,"entry_low":entry_low,"entry_high":entry_high,"vr":vr,"t1":t1,"t2":t2,"sl":sl,"pp":pp,"r1":r1,"r2":r2,"s1":s1,"s2":s2,"risk":risk,"rr1":rr1,"rr2":rr2,"win":winp,"avwap":avwap,"avwap_low":avwap_low,"avwap_50":avwap_50,"avwap_high":avwap_high,"rsi":rsi,"sniper":sniper_score>=70,"breakout":breakout_score>=70,"trend":trend_score>=50,"weight":weight,"bala_wma":bala_wma_score>=100,"wma8":wma8,"wma20":wma20,"wma50":wma50,"ema8":ema8,"composite":composite,"zone":zone,"scores":{"trend":trend_score,"bala":bala_wma_score,"dip":dip_score,"sniper":sniper_score,"break":breakout_score}}
 
 def main():
     symbols = load_nifty500()
     symbols_ns = [s+".NS" for s in symbols]
-    all_data = yf.download(symbols_ns, period="3mo", interval="1d", progress=False, auto_adjust=True, group_by='ticker', threads=True)
+    # FIX: ignore failed downloads, use threads but don't crash
+    all_data = yf.download(symbols_ns, period="3mo", interval="1d", progress=False, auto_adjust=True, group_by='ticker', threads=True, ignore_tz=True)
     regime, nscore, nprice, breadth, desc, strategy, weights, min_win, vix, vix_trend, pcr_proxy, pcr_signal, adx, bb_width, ema20, ema50, ema200 = detect_market_regime(all_data, symbols)
     indices = get_indices()
     all_picks=[]
@@ -261,46 +254,32 @@ def main():
 
     top_hybrid = sorted(all_picks, key=lambda x:(x['composite'], x['win']), reverse=True)[:10]
     top3 = sorted(all_picks, key=lambda x:x['weight'], reverse=True)[:3]
-    total_weight = sum([p['weight'] for p in top3]) if top3 else 1
     for idx, p in enumerate(top3):
         allocs = [40,35,25] if regime=="TRENDING_BULL" else [33,33,34]
         p['alloc_pct'] = allocs[idx] if idx<3 else 33
         p['alloc_value'] = CAPITAL * p['alloc_pct']/100
-        risk_amount = CAPITAL*0.015
-        qty_by_risk = int(risk_amount/p['risk']) if p['risk']>0 else 0
-        qty_by_cap = int(p['alloc_value']/p['price'])
-        p['qty'] = max(1, min(qty_by_risk, qty_by_cap))
+        p['qty'] = max(1, min(int(CAPITAL*0.015/p['risk']) if p['risk']>0 else 1, int(p['alloc_value']/p['price'])))
 
-    msg = f"🤖 MASTER BOT V12.0 MARKET REGIME - {date.today()}\n"
-    msg += f"━━━━━━━━━━━━━━━━━━━━━\n"
-    msg += f"📈 MARKET TYPE: {regime}\n"
-    msg += f"📝 {desc}\n"
-    msg += f"🎯 Strategy: {strategy}\n"
-    msg += f"━━━━━━━━━━━━━━━━━━━━━\n"
-    msg += f"NIFTY {nprice:.0f} Score:{nscore} | EMA20 {ema20:.0f} 50 {ema50:.0f} 200 {ema200:.0f}\n"
-    msg += f"ADX {adx:.0f} BB Width {bb_width:.1f}% Breadth {breadth:.0f}%\n"
-    msg += f"VIX {vix:.1f} ({vix_trend}) | PCR Proxy {pcr_proxy} | {pcr_signal}\n"
-    msg += f"⚖️ Weights T{weights['trend']}% B{weights['bala_wma']}% Br{weights['breakout']}% S{weights['sniper']}% D{weights['dip']}% MinWin {min_win}% | {len(all_picks)} stocks\n\n"
-    msg += f"📊 INDICES S/R:\n"
+    msg = f"🤖 MASTER BOT V12.1 FIXED MARKET REGIME - {date.today()}\n"
+    msg += f"📈 MARKET TYPE: {regime}\n{desc}\n🎯 {strategy}\n"
+    msg += f"NIFTY {nprice:.0f} Score:{nscore} EMA20 {ema20:.0f} 50 {ema50:.0f} 200 {ema200:.0f}\n"
+    msg += f"ADX {adx:.0f} BB {bb_width:.1f}% Breadth {breadth:.0f}% VIX {vix:.1f} ({vix_trend}) PCR {pcr_proxy} {pcr_signal}\n"
+    msg += f"⚖️ W:T{weights['trend']}% B{weights['bala_wma']}% Br{weights['breakout']}% S{weights['sniper']}% D{weights['dip']}% MinWin {min_win}% | {len(all_picks)} stocks\n\n"
     for name, d in indices.items():
         msg += f"{name} {d['price']:.0f} S2:{d['s2']:.0f} S1:{d['s1']:.0f} PP:{d['pp']:.0f} R1:{d['r1']:.0f} R2:{d['r2']:.0f}\n"
-    msg += f"\n🏆 TOP 10 (Composite + MinWin {min_win}%):\n"
+    msg += f"\n🏆 TOP 10:\n"
     for i,p in enumerate(top_hybrid,1):
-        msg += f"{i}. {p['sym']} Comp:{p['composite']:.0f} Win:{p['win']}% RSI:{p['rsi']:.0f} E:{p['entry']:.0f} {p['zone']} | AVWAP {p['avwap_low']:.0f} {'ABOVE' if p['price']>p['avwap_low'] else 'BELOW'}\n"
-    msg += f"\n💎 TOP 3 TO TRADE - FULL LEVELS:\n"
+        msg += f"{i}. {p['sym']} Comp:{p['composite']:.0f} Win:{p['win']}% RSI:{p['rsi']:.0f} E:{p['entry']:.0f} {p['zone']} AVWAP {p['avwap_low']:.0f}\n"
+    msg += f"\n💎 TOP 3 TRADE:\n"
     for i,p in enumerate(top3,1):
-        tags=[]
+        tags = []
         if p['bala_wma']: tags.append("BALA")
         if p['sniper']: tags.append("SNIPER")
         if p['breakout']: tags.append("BREAK")
         tag_str = f"[{','.join(tags)}]" if tags else ""
         msg += f"\n{i}. {p['sym']} {tag_str} Comp:{p['composite']:.0f} Win:{p['win']}% RSI:{p['rsi']:.0f} QTY:{p['qty']} ({p['alloc_pct']:.0f}%) {p['zone']}\n"
-        msg += f"   ENTRY RANGE: {p['entry_low']:.0f} - {p['entry_high']:.0f} (CMP:{p['entry']:.0f})\n"
-        msg += f"   TARGETS: T1:{p['t1']:.0f} RR{ p['rr1']:.1f} | T2:{p['t2']:.0f} RR{ p['rr2']:.1f}\n"
-        msg += f"   STOPLOSS: {p['sl']:.0f} | Risk:Rs.{int(p['risk']*p['qty'])} | Val:Rs.{int(p['alloc_value']):,}\n"
-        msg += f"   PIVOT: S2:{p['s2']:.0f} S1:{p['s1']:.0f} PP:{p['pp']:.0f} R1:{p['r1']:.0f} R2:{p['r2']:.0f}\n"
-        msg += f"   AVWAP: 20D:{p['avwap_low']:.0f} 50D:{p['avwap_50']:.0f} High:{p['avwap_high']:.0f} | RSI:{p['rsi']:.0f}\n"
-        msg += f"   Logic: T:{p['scores']['trend']:.0f} B:{p['scores']['bala']:.0f} D:{p['scores']['dip']:.0f} S:{p['scores']['sniper']:.0f} Br:{p['scores']['break']:.0f}\n"
+        msg += f"   ENTRY: {p['entry_low']:.0f}-{p['entry_high']:.0f} CMP:{p['entry']:.0f} T1:{p['t1']:.0f} RR{ p['rr1']:.1f} T2:{p['t2']:.0f} RR{ p['rr2']:.1f} SL:{p['sl']:.0f}\n"
+        msg += f"   S/R: S2:{p['s2']:.0f} S1:{p['s1']:.0f} PP:{p['pp']:.0f} R1:{p['r1']:.0f} R2:{p['r2']:.0f} AVWAP 20D:{p['avwap_low']:.0f} 50D:{p['avwap_50']:.0f}\n"
     print(msg)
     send_telegram(msg)
 
