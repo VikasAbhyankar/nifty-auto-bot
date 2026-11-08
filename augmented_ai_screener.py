@@ -17,7 +17,6 @@ def send_telegram(msg):
         except: pass
 
 def wma(series, period):
-    # Weighted Moving Average
     weights = np.arange(1, period + 1)
     return series.rolling(period).apply(lambda x: np.dot(x, weights) / weights.sum(), raw=True)
 
@@ -27,7 +26,7 @@ def load_nifty500():
             df = pd.read_csv("nifty500_list.csv")
             return df['Symbol'].dropna().tolist()[:500]
     except: pass
-    return ["RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","BHARTIARTL","SBIN","LT","BAJFINANCE","ITC","BSE","BHARTIHEXA","LTTS","HCLTECH","SHYAMMETL","WIPRO","COFORGE","TECHM","PERSISTENT","TITAN","KALYANKJIL","WABAG","M&M","HINDALCO","INDUSINDBK","DIVISLAB","INDHOTEL"]
+    return ["RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","BHARTIARTL","SBIN","LT","BAJFINANCE","ITC","BSE","BHARTIHEXA","LTTS","HCLTECH","SHYAMMETL","WIPRO","COFORGE","TECHM","PERSISTENT","TITAN","KALYANKJIL","WABAG","M&M","HINDALCO","INDUSINDBK","DIVISLAB","INDHOTEL","HAL","BANKBARODA","PNB","CIPLA","FDC"]
 
 def get_indices():
     indices_map = {"NIFTY":"^NSEI", "BANKNIFTY":"^NSEBANK", "FINNIFTY":"^CNXFIN", "IT":"^CNXIT"}
@@ -91,14 +90,11 @@ def analyze(df):
     elif price>=high20*0.98: points+=10
     if 60<=rsi<=75: points+=20
     elif 55<=rsi<=80: points+=10
-
-    # --- BALA's FILTERS ---
-    bala_wma_bull = (wma8 > wma20 > wma50) and (price > wma8)  # Chartink 8-20-50 WMA
-    near_8ema = abs(price - ema8) / price * 100 <= 2.5  # Near 8 EMA within 2.5%
+    bala_wma_bull = (wma8 > wma20 > wma50) and (price > wma8)
+    near_8ema = abs(price - ema8) / price * 100 <= 2.5
     bala_score = 0
     if bala_wma_bull: bala_score += 30
     if near_8ema and price > ema20: bala_score += 20
-    
     entry = price; t1 = price + 1.5*atr; t2 = price + 3.0*atr
     sl = max(ema20, price - 1.2*atr)
     risk = price - sl; rr1 = (t1-price)/risk if risk>0 else 0; rr2 = (t2-price)/risk if risk>0 else 0
@@ -111,7 +107,7 @@ def analyze(df):
     winp = min(95, max(45, winp + (points-60)//2 + bala_score//3))
     is_sniper = price>avwap and price>ema20 and vr>1.2
     weight = (winp * (points + bala_score) * (1 + rr1))
-    return {"price":price,"entry":entry,"points":points,"vr":vr,"t1":t1,"t2":t2,"sl":sl,"risk":risk,"rr1":rr1,"rr2":rr2,"win":winp,"avwap":avwap,"sniper":is_sniper,"breakout":price>=high20*0.98,"trend":price>ema20 and ema20>ema50,"weight":weight,"bala_wma":bala_wma_bull,"bala_near8":near_8ema,"wma8":wma8,"ema8":ema8,"bala_score":bala_score}
+    return {"price":price,"entry":entry,"points":points,"vr":vr,"t1":t1,"t2":t2,"sl":sl,"risk":risk,"rr1":rr1,"rr2":rr2,"win":winp,"avwap":avwap,"sniper":is_sniper,"breakout":price>=high20*0.98,"trend":price>ema20 and ema20>ema50,"weight":weight,"bala_wma":bala_wma_bull,"bala_near8":near_8ema,"wma8":wma8,"wma20":wma20,"wma50":wma50,"ema8":ema8,"bala_score":bala_score}
 
 def main():
     regime, nscore, nprice = get_nifty_regime()
@@ -131,14 +127,11 @@ def main():
             if res and res['points']>=55:
                 all_picks.append({"sym":sym, **res})
         except: continue
-
     top_trend = sorted([p for p in all_picks if p['trend']], key=lambda x:(x['bala_score'], x['win'], x['points']), reverse=True)[:10]
     top_sniper = sorted([p for p in all_picks if p['sniper']], key=lambda x:(x['win'],x['points']), reverse=True)[:7]
     top_break = sorted([p for p in all_picks if p['breakout']], key=lambda x:x['vr'], reverse=True)[:7]
-    # Bala's special lists
     bala_wma_list = sorted([p for p in all_picks if p['bala_wma']], key=lambda x:(x['win'],x['vr']), reverse=True)[:7]
     bala_near8_list = sorted([p for p in all_picks if p['bala_near8'] and p['trend']], key=lambda x:(x['win'],x['points']), reverse=True)[:7]
-    
     safe_picks = [p for p in all_picks if p['win']>=65]
     top3 = sorted(safe_picks, key=lambda x:x['weight'], reverse=True)[:3]
     total_weight = sum([p['weight'] for p in top3]) if top3 else 1
@@ -149,8 +142,7 @@ def main():
         qty_by_risk = int(risk_amount/p['risk']) if p['risk']>0 else 0
         qty_by_cap = int(p['alloc_value']/p['price'])
         p['qty'] = max(1, min(qty_by_risk, qty_by_cap))
-
-    msg = f"🤖 MASTER BOT 500 V9.0 BALA EDITION - {date.today()}\n"
+    msg = f"🤖 MASTER BOT 500 V9.1 BALA EDITION - {date.today()}\n"
     msg += f"NIFTY {nprice:.0f} Score:{nscore}/100 {regime}\n"
     msg += f"{'✅ TRADE' if nscore>=60 else '🛑 NO TRADE'} | {len(symbols)} scanned | Cap:Rs.{int(CAPITAL):,}\n\n"
     msg += f"📊 INDICES S/R:\n"
@@ -163,7 +155,7 @@ def main():
         msg += f"{i}. {p['sym']} {p['win']}% {p['points']}pts{bala_tag}\n   E:{p['entry']:.0f} T1:{p['t1']:.0f} T2:{p['t2']:.0f} SL:{p['sl']:.0f}\n"
     msg += f"\n💎 BALA 8-20-50 WMA (7):\n"
     for i,p in enumerate(bala_wma_list,1):
-        msg += f"{i}. {p['sym']} {p['wma8']:.0f}>{p['price']*0:.0f} {p['win']}% Vol:{p['vr']:.1f}x\n   E:{p['entry']:.0f} T1:{p['t1']:.0f} T2:{p['t2']:.0f} SL:{p['sl']:.0f}\n"
+        msg += f"{i}. {p['sym']} {p['wma8']:.0f}>{p['wma20']:.0f}>{p['wma50']:.0f} {p['win']}% Vol:{p['vr']:.1f}x\n   E:{p['entry']:.0f} T1:{p['t1']:.0f} T2:{p['t2']:.0f} SL:{p['sl']:.0f}\n"
     msg += f"\n🎯 NEAR 8 EMA DIP (7):\n"
     for i,p in enumerate(bala_near8_list,1):
         msg += f"{i}. {p['sym']} {p['price']:.0f}~{p['ema8']:.0f} ({abs(p['price']-p['ema8'])/p['price']*100:.1f}% away) {p['win']}%\n   E:{p['entry']:.0f} T1:{p['t1']:.0f} T2:{p['t2']:.0f} SL:{p['sl']:.0f}\n"
