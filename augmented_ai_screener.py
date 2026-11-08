@@ -26,7 +26,7 @@ def load_nifty500():
             df = pd.read_csv("nifty500_list.csv")
             return df['Symbol'].dropna().tolist()[:500]
     except: pass
-    return ["RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","BHARTIARTL","SBIN","LT","BAJFINANCE","ITC","BSE","BHARTIHEXA","LTTS","HCLTECH","SHYAMMETL","WIPRO","COFORGE","TECHM","PERSISTENT","TITAN","KALYANKJIL","WABAG","M&M","HINDALCO","INDUSINDBK","DIVISLAB","INDHOTEL","HAL","BANKBARODA","PNB","CIPLA","FDC"]
+    return ["RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","BHARTIARTL","SBIN","LT","BAJFINANCE","ITC","BSE","BHARTIHEXA","LTTS","HCLTECH","SHYAMMETL","WIPRO","COFORGE","TECHM","PERSISTENT","TITAN","KALYANKJIL","WABAG","M&M","HINDALCO","INDUSINDBK","DIVISLAB","INDHOTEL","HAL","BANKBARODA","PNB","CIPLA","FDC","FSL","ULTRACEMCO","JSWSTEEL","IOC","HDFCBANK"]
 
 def get_indices():
     indices_map = {"NIFTY":"^NSEI", "BANKNIFTY":"^NSEBANK", "FINNIFTY":"^CNXFIN", "IT":"^CNXIT"}
@@ -56,7 +56,7 @@ def get_market_sentiment(all_data, symbols):
     if atr_pct>1: nifty_score+=20
     if price>sh*0.99: nifty_score+=20
     above=0; total=0
-    for sym in symbols[:100]:
+    for sym in symbols[:120]:
         try:
             sym_ns = sym+".NS"
             if sym_ns not in all_data.columns.get_level_values(0): continue
@@ -92,12 +92,11 @@ def analyze(df, weights):
     df['High20'] = df['High'].rolling(20).max()
     df['Vol20'] = df['Volume'].rolling(20).mean()
     df['ATR'] = (df['High'] - df['Low']).rolling(14).mean()
-    last = df.iloc[-1]; prev = df.iloc[-2] if len(df)>=2 else last
+    last = df.iloc[-1]
     if pd.isna(last['EMA20']) or pd.isna(last['Vol20']) or pd.isna(last['WMA20']): return None
     price = float(last['Close']); ema8 = float(last['EMA8']); ema20 = float(last['EMA20']); ema50 = float(last['EMA50'])
     wma8 = float(last['WMA8']); wma20 = float(last['WMA20']); wma50 = float(last['WMA50'])
     high20 = float(last['High20']); vol20 = float(last['Vol20']); vol_now = float(last['Volume']); atr = float(last['ATR'])
-    # Pivot levels for this stock (using last day)
     h = float(last['High']); l = float(last['Low']); c = float(last['Close'])
     pp = (h+l+c)/3; r1 = 2*pp - l; s1 = 2*pp - h; r2 = pp + (h-l); s2 = pp - (h-l)
     delta = df['Close'].diff(); gain = delta.where(delta>0,0).rolling(14).mean(); loss = -delta.where(delta<0,0).rolling(14).mean(); rs = gain/loss
@@ -127,7 +126,6 @@ def analyze(df, weights):
     points = int(composite)
     entry = price; t1 = price + 1.5*atr; t2 = price + 3.0*atr
     sl = max(ema20, price - 1.2*atr)
-    # Entry Range - 0.5% zone for buying
     entry_low = max(ema20, price - 0.4*atr)
     entry_high = price + 0.3*atr
     risk = price - sl; rr1 = (t1-price)/risk if risk>0 else 0; rr2 = (t2-price)/risk if risk>0 else 0
@@ -139,7 +137,12 @@ def analyze(df, weights):
     winp = int(wins/tot*100) if tot>0 else 50
     winp = min(95, max(45, winp + (composite-50)//2))
     weight = winp * composite * (1+rr1) * (1+vr/3)
-    return {"price":price,"entry":entry,"entry_low":entry_low,"entry_high":entry_high,"points":points,"vr":vr,"t1":t1,"t2":t2,"sl":sl,"pp":pp,"r1":r1,"r2":r2,"s1":s1,"s2":s2,"risk":risk,"rr1":rr1,"rr2":rr2,"win":winp,"avwap":avwap,"sniper":sniper_score>=70,"breakout":breakout_score>=70,"trend":trend_score>=50,"weight":weight,"bala_wma":bala_wma_score>=100,"bala_near8":dip_score>=80,"wma8":wma8,"wma20":wma20,"wma50":wma50,"ema8":ema8,"composite":composite,"scores":{"trend":trend_score,"bala":bala_wma_score,"dip":dip_score,"sniper":sniper_score,"break":breakout_score}}
+    # Buy zone tag
+    if price <= s1*1.01: zone="🟢 DEEP DIP - STRONG BUY"
+    elif price <= pp: zone="🟡 NEAR SUPPORT - BUY"
+    elif price <= r1: zone="🔵 ABOVE PP - MOMENTUM BUY"
+    else: zone="🔴 NEAR R1/R2 - WAIT FOR DIP"
+    return {"price":price,"entry":entry,"entry_low":entry_low,"entry_high":entry_high,"points":points,"vr":vr,"t1":t1,"t2":t2,"sl":sl,"pp":pp,"r1":r1,"r2":r2,"s1":s1,"s2":s2,"risk":risk,"rr1":rr1,"rr2":rr2,"win":winp,"avwap":avwap,"sniper":sniper_score>=70,"breakout":breakout_score>=70,"trend":trend_score>=50,"weight":weight,"bala_wma":bala_wma_score>=100,"bala_near8":dip_score>=80,"wma8":wma8,"wma20":wma20,"wma50":wma50,"ema8":ema8,"composite":composite,"zone":zone,"scores":{"trend":trend_score,"bala":bala_wma_score,"dip":dip_score,"sniper":sniper_score,"break":breakout_score}}
 
 def main():
     symbols = load_nifty500()
@@ -156,10 +159,14 @@ def main():
             if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.droplevel(0)
             if len(df)<30 or df['Close'].isna().all(): continue
             res = analyze(df, weights)
-            if res and res['composite']>=55:
+            if res and res['composite']>=60 and res['win']>=min_win:
                 all_picks.append({"sym":sym, **res})
         except: continue
+
+    # FIXED: TOP 10 also filtered by min_win 70% - No more HDFCBANK 45%!
     top_hybrid = sorted(all_picks, key=lambda x:(x['composite'], x['win']), reverse=True)[:10]
+    bala_wma_list = sorted([p for p in all_picks if p['bala_wma']], key=lambda x:(x['win'],x['composite']), reverse=True)[:7]
+    
     safe_picks = [p for p in all_picks if p['win']>=min_win]
     top3 = sorted(safe_picks, key=lambda x:x['weight'], reverse=True)[:3]
     total_weight = sum([p['weight'] for p in top3]) if top3 else 1
@@ -175,18 +182,20 @@ def main():
         qty_by_cap = int(p['alloc_value']/p['price'])
         p['qty'] = max(1, min(qty_by_risk, qty_by_cap))
 
-    msg = f"🤖 MASTER BOT V11.1 HYBRID + LEVELS - {date.today()}\n"
+    msg = f"🤖 MASTER BOT V11.2 FINAL HYBRID - {date.today()}\n"
     msg += f"NIFTY {nprice:.0f} Score:{nscore} Breadth:{breadth:.0f}% {regime}\n"
     msg += f"🧠 {sentiment}\n"
-    msg += f"⚖️ W:Trend{weights['trend']}% Bala{weights['bala_wma']}% Break{weights['breakout']}% Sniper{weights['sniper']}% Dip{weights['dip']}% | MinWin:{min_win}%\n\n"
-
+    msg += f"⚖️ W:T{weights['trend']}% B{weights['bala_wma']}% Br{weights['breakout']}% S{weights['sniper']}% D{weights['dip']}% | MinWin:{min_win}% | Filtered: {len(all_picks)} stocks\n\n"
     msg += f"📊 INDICES S/R:\n"
     for name, d in indices.items():
         msg += f"{name} {d['price']:.0f} | S2:{d['s2']:.0f} S1:{d['s1']:.0f} PP:{d['pp']:.0f} R1:{d['r1']:.0f} R2:{d['r2']:.0f}\n"
-
-    msg += f"\n--------------------------\n🏆 HYBRID TOP 10:\n"
+    msg += f"\n--------------------------\n🏆 HYBRID TOP 10 (Min {min_win}% Win Filtered):\n"
     for i,p in enumerate(top_hybrid,1):
-        msg += f"{i}. {p['sym']} Comp:{p['composite']:.0f} Win:{p['win']}% Vol:{p['vr']:.1f}x E:{p['entry']:.0f}\n"
+        msg += f"{i}. {p['sym']} Comp:{p['composite']:.0f} Win:{p['win']}% Vol:{p['vr']:.1f}x E:{p['entry']:.0f} {p['zone']}\n"
+
+    msg += f"\n💎 BALA 8-20-50 WMA (7):\n"
+    for i,p in enumerate(bala_wma_list,1):
+        msg += f"{i}. {p['sym']} {p['wma8']:.0f}>{p['wma20']:.0f}>{p['wma50']:.0f} {p['win']}% Comp:{p['composite']:.0f} {p['zone']}\n"
 
     msg += f"\n--------------------------\n💎 TOP 3 TO TRADE - FULL LEVELS:\n"
     for i,p in enumerate(top3,1):
@@ -195,7 +204,7 @@ def main():
         if p['sniper']: tags.append("SNIPER")
         if p['breakout']: tags.append("BREAK")
         tag_str = f"[{','.join(tags)}]" if tags else ""
-        msg += f"\n{i}. {p['sym']} {tag_str} Comp:{p['composite']:.0f} Win:{p['win']}% QTY:{p['qty']} ({p['alloc_pct']:.0f}%)\n"
+        msg += f"\n{i}. {p['sym']} {tag_str} Comp:{p['composite']:.0f} Win:{p['win']}% QTY:{p['qty']} ({p['alloc_pct']:.0f}%) {p['zone']}\n"
         msg += f"   ENTRY RANGE: {p['entry_low']:.0f} - {p['entry_high']:.0f} (CMP:{p['entry']:.0f})\n"
         msg += f"   TARGETS: T1:{p['t1']:.0f} (RR{ p['rr1']:.1f}) | T2:{p['t2']:.0f} (RR{ p['rr2']:.1f})\n"
         msg += f"   STOPLOSS: {p['sl']:.0f} | Risk:Rs.{int(p['risk']*p['qty'])} | Val:Rs.{int(p['alloc_value']):,}\n"
