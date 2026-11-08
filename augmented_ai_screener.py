@@ -1,7 +1,6 @@
 """
 MASTER BOT V12.3 ULTRA + HILEGA-MILEGA
 V12.2 + RSI9 + EMA3 + WMA21 + 50 Filter
-By Nitish Kumar Sir Logic
 """
 
 import yfinance as yf
