@@ -106,36 +106,23 @@ def main():
             time.sleep(2)
         base = analyze(sym)
         if not base: continue
+        # Always collect base
+        if base['symbol'] not in seen or base['score'] > seen[base['symbol']]['score']:
+            seen[base['symbol']]=base
+        # BTST check extra
         if scan_type == "BTST":
             btst_ok, avwap_30, prev_high, curr_price = check_btst_avwap(sym)
             if btst_ok:
                 base['btst_ok']=True; base['avwap_30']=avwap_30; base['prev_30m_high']=prev_high
                 base['final_rank']=base['score']*0.4 + base['win']*0.25 + base['prob']*0.25 + 20 + (15 if base['true_bala'] else 0)
                 btst_results.append(base)
-        else:
-            if base['symbol'] not in seen or base['score'] > seen[base['symbol']]['score']:
-                seen[base['symbol']]=base
     
-    if scan_type == "BTST":
-        btst_results = sorted(btst_results, key=lambda x: x['final_rank'], reverse=True)
-        now_str = now_ist.strftime("%d-%m %I:%M %p")
-        msg = f"🚀 BTST SCAN - {now_str}\nAVWAP > Prev 30m High | Price > AVWAP\nFound: {len(btst_results)}/{len(NIFTY500)} stocks\n\n"
-        if len(btst_results)==0:
-            msg += "No BTST stocks today! Market weak.\n"
-        else:
-            msg += f"🔥 BTST BEST 3 - BUY TOMORROW\n\n"
-            for i, r in enumerate(btst_results[:3]):
-                msg += f"{i+1}. {r['symbol']} CMP:{r['cmp']:.0f}\n"
-                msg += f"Entry: {r['entry_low']:.0f}-{r['entry_high']:.0f} (Buy on dip)\n"
-                msg += f"SL: {r['sl']:.0f} ({((r['cmp']-r['sl'])/r['cmp']*100):.1f}%)\n"
-                msg += f"T1: {r['t1']:.0f} (+5%) T2: {r['t2']:.0f} (+{((r['t2']/r['cmp']-1)*100):.0f}%)\n"
-                msg += f"AVWAP:{r['avwap_30']:.0f} > 30mH:{r['prev_30m_high']:.0f} | R:{r['final_rank']:.0f} RSI:{r['rsi14']:.0f}\n\n"
-        print(msg); send_telegram(msg); return
-    
+    # Common ranking for all
     results = list(seen.values())
     for r in results:
         r['final_rank'] = r['score']*0.4 + r['win']*0.25 + r['prob']*0.25 + (15 if r['true_bala'] else 0) + (10 if r['htf_cluster'] else 0)
     results = sorted(results, key=lambda x: x['final_rank'], reverse=True)
+    btst_results = sorted(btst_results, key=lambda x: x['final_rank'], reverse=True)
     
     true_bala_list = sorted([x for x in results if x['true_bala']], key=lambda x: x['final_rank'], reverse=True)
     htf_list = [x for x in results if x['htf_cluster'] and x['symbol'] not in [y['symbol'] for y in true_bala_list[:3]]]
@@ -146,7 +133,26 @@ def main():
     hm_list = sorted(hm_list, key=lambda x: x['final_rank'], reverse=True)
     
     now_str = now_ist.strftime("%d-%m %I:%M %p")
-    msg = f"🚀 MASTER V18.7 {scan_type} - {now_str}\nScan: {len(results)}/{len(NIFTY500)} | TB:{len(true_bala_list)} | HTF:{len(htf_list)}\n\n"
+    
+    if scan_type == "BTST":
+        msg = f"🚀 BTST SCAN - {now_str}\n"
+        msg += f"Condition: AVWAP > Prev 30m High | Price > AVWAP\n"
+        msg += f"Found: {len(btst_results)}/{len(NIFTY500)} BTST stocks\n\n"
+        if len(btst_results)>0:
+            msg += f"🔥 BTST BEST 3 - BUY TOMORROW\n\n"
+            for i, r in enumerate(btst_results[:3]):
+                msg += f"{i+1}. {r['symbol']} CMP:{r['cmp']:.0f}\n"
+                msg += f"Entry:{r['entry_low']:.0f}-{r['entry_high']:.0f} SL:{r['sl']:.0f} (-{((r['cmp']-r['sl'])/r['cmp']*100):.1f}%) T1:{r['t1']:.0f} T2:{r['t2']:.0f}\n"
+                msg += f"AVWAP:{r['avwap_30']:.0f} > 30mH:{r['prev_30m_high']:.0f} R:{r['final_rank']:.0f}\n\n"
+        else:
+            msg += f"⚠️ No BTST stocks with AVWAP > 30m High - Market weak/sideways today!\n"
+            msg += f"Showing regular TRUE BALA instead:\n\n"
+    
+    else:
+        msg = f"🚀 MASTER V18.8 {scan_type} - {now_str}\n"
+    
+    # Always show regular categories (even in BTST scan)
+    msg += f"Scan: {len(results)}/{len(NIFTY500)} | TB:{len(true_bala_list)} | HTF:{len(htf_list)}\n\n"
     
     def add_section(title, lst):
         nonlocal msg
@@ -164,15 +170,9 @@ def main():
     msg += f"🏆 FINAL BEST 3 - SYSTEM AUTO\n\n"
     for i, r in enumerate(results[:3]):
         risk = ((r['cmp']-r['sl'])/r['cmp']*100)
-        reward1 = ((r['t1']/r['cmp']-1)*100)
-        reward2 = ((r['t2']/r['cmp']-1)*100)
-        msg += f"{i+1}. {r['symbol']} CMP:{r['cmp']:.0f} FinalRank:{r['final_rank']:.1f} {'🔥TB' if r['true_bala'] else ''}\n"
-        msg += f"Entry: {r['entry_low']:.0f} - {r['entry_high']:.0f}\n"
-        msg += f"SL: {r['sl']:.0f} (-{risk:.1f}%) | T1: {r['t1']:.0f} (+{reward1:.0f}%) | T2: {r['t2']:.0f} (+{reward2:.0f}%)\n"
-        msg += f"RSI:{r['rsi14']:.0f} Vol:{r['vol_ratio']:.1f}x 8E:{r['ema8']:.0f} 20E:{r['ema20']:.0f}\n\n"
+        msg += f"{i+1}. {r['symbol']} CMP:{r['cmp']:.0f} R:{r['final_rank']:.1f} {'🔥TB' if r['true_bala'] else ''}\n"
+        msg += f"Entry: {r['entry_low']:.0f}-{r['entry_high']:.0f} | SL:{r['sl']:.0f} (-{risk:.1f}%)\n"
+        msg += f"T1:{r['t1']:.0f} T2:{r['t2']:.0f} RSI:{r['rsi14']:.0f} Vol:{r['vol_ratio']:.1f}x\n\n"
     
     print(msg)
     send_telegram(msg)
-
-if __name__ == "__main__":
-    main()
