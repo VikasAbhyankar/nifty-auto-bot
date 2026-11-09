@@ -191,9 +191,25 @@ def send_telegram(msg):
 def main():
     ist = timezone(timedelta(hours=5, minutes=30))
     now_ist = datetime.now(ist)
-    hour = now_ist.hour; minute = now_ist.minute
-    is_btst_scan = (hour == 9 and minute >= 35 and minute <= 59)
-    scan_type = "BTST" if is_btst_scan else "MORNING" if hour < 12 else "CLOSING"
+    hour = now_ist.hour
+    minute = now_ist.minute
+    
+    scan_env = os.getenv("SCAN_TYPE", "AUTO").upper()
+    
+    if scan_env == "BTST":
+        scan_type = "BTST"
+    elif scan_env == "POST":
+        scan_type = "POST"
+    elif scan_env == "MARKET_DIR":
+        scan_type = "MARKET_DIR"
+    else:
+        # AUTO based on IST time
+        if hour == 15:  # 3 PM IST = BTST
+            scan_type = "BTST"
+        elif hour == 16 or hour == 10:  # 4 PM IST = POST (10 is UTC fallback)
+            scan_type = "POST"
+        else:  # 9:45 AM IST and any other morning time = Market Direction
+            scan_type = "MARKET_DIR"
     
     market = get_market_direction()
     print(f"Market: {market['direction']} | Nifty:{market['nifty_cmp']:.0f} RSI:{market['nifty_rsi']:.0f} Bias:{market['bias']} BullScore:{market['bull_score']}/5")
