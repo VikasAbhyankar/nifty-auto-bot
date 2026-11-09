@@ -255,16 +255,15 @@ if __name__=="__main__":
     print(msg)
     def send_telegram(msg):
     if not BOT_TOKEN or not CHAT_ID:
-        print(f"ERROR: BOT_TOKEN or CHAT_ID missing! Token={bool(BOT_TOKEN)} Chat={bool(CHAT_ID)}")
+        print(f"ERROR: BOT_TOKEN missing={not BOT_TOKEN} CHAT_ID missing={not CHAT_ID}")
         return
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    # Remove markdown for safety - send plain text
+    # Send in 3500 char chunks, plain text no markdown
     for i in range(0, len(msg), 3500):
         chunk = msg[i:i+3500]
         try:
             r = requests.post(url, json={"chat_id": CHAT_ID, "text": chunk}, timeout=20)
-            print(f"Telegram sent chunk {i}: Status {r.status_code} Response {r.text[:200]}")
+            print(f"Telegram chunk {i//3500+1} status {r.status_code}: {r.text[:200]}")
         except Exception as e:
-            print(f"Telegram failed chunk {i}: {e}")
-    if results:
+            print(f"Telegram failed: {e}")
         pd.DataFrame(results_sorted).to_csv("nifty500_results.csv",index=False)
