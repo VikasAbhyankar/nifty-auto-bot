@@ -1,25 +1,20 @@
-name: True Bala Screener
-
+name: True Bala Screener V19.2
 on:
   schedule:
-    - cron: '45 3 * * 1-5'   # 9:15 AM IST Morning
-    - cron: '15 4 * * 1-5'   # 9:45 AM IST BTST AVWAP
-    - cron: '30 9 * * 1-5'   # 3:00 PM IST Closing
+    - cron: '45 3 * * 1-5'
+    - cron: '15 4 * * 1-5'
+    - cron: '30 9 * * 1-5'
   workflow_dispatch:
-
 jobs:
   scan:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - name: Set up Python
-        uses: actions/setup-python@v4
+      - uses: actions/setup-python@v4
         with:
           python-version: '3.10'
-      - name: Install deps
-        run: pip install yfinance pandas numpy requests
-      - name: Run Screener
-        env:
+      - run: pip install yfinance pandas numpy requests
+      - env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python augmented_ai_screener.py
