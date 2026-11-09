@@ -253,6 +253,18 @@ if __name__=="__main__":
     msg+=f"━━━━━━━━━━━━━━━━━━━━\n🧠 TRUE BALA = Price>AVWAP + Weekly Bull + Daily 8>20>50 + RSI>60 + Vol>1.2x\nHTF Cluster = Weekly + Daily both bullish + Above AVWAP"
     
     print(msg)
-    send_telegram(msg)
+    def send_telegram(msg):
+    if not BOT_TOKEN or not CHAT_ID:
+        print(f"ERROR: BOT_TOKEN or CHAT_ID missing! Token={bool(BOT_TOKEN)} Chat={bool(CHAT_ID)}")
+        return
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+    # Remove markdown for safety - send plain text
+    for i in range(0, len(msg), 3500):
+        chunk = msg[i:i+3500]
+        try:
+            r = requests.post(url, json={"chat_id": CHAT_ID, "text": chunk}, timeout=20)
+            print(f"Telegram sent chunk {i}: Status {r.status_code} Response {r.text[:200]}")
+        except Exception as e:
+            print(f"Telegram failed chunk {i}: {e}")
     if results:
         pd.DataFrame(results_sorted).to_csv("nifty500_results.csv",index=False)
