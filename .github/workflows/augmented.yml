@@ -1,13 +1,14 @@
-name: MASTER BOT 500 V8.5 - 2 MSG
+name: True Bala Screener
 
 on:
   schedule:
-    - cron: '0 4 * * 1-5'   # 9:30 AM IST - Entry
-    - cron: '15 10 * * 1-5' # 3:45 PM IST - Final
+    - cron: '45 3 * * 1-5'   # 9:15 AM IST Morning
+    - cron: '15 4 * * 1-5'   # 9:45 AM IST BTST AVWAP
+    - cron: '30 9 * * 1-5'   # 3:00 PM IST Closing
   workflow_dispatch:
 
 jobs:
-  run-screener:
+  scan:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -16,10 +17,9 @@ jobs:
         with:
           python-version: '3.10'
       - name: Install deps
-        run: pip install yfinance pandas requests
+        run: pip install yfinance pandas numpy requests
       - name: Run Screener
         env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.CHAT_ID }}
-          CAPITAL: ${{ secrets.CAPITAL }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python augmented_ai_screener.py
