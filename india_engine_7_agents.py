@@ -8,8 +8,7 @@ import numpy as np
 NL = chr(10)
 try:
     import yfinance as yf
-except Exception as e:
-    print("yfinance missing")
+except:
     yf = None
 try:
     import requests
@@ -28,12 +27,13 @@ def now_str():
         return datetime.now().strftime("%d-%m %H:%M")
     except:
         return "Now"
-BOT_TOKEN = os.getenv("TELEGRAM_FNO_BOT_TOKEN", "")
+BOT_TOKEN = os.getenv("TELEGRAM_FNO_BOT_TOKEN", "") or os.getenv("TELEGRAM_BOT_TOKEN", "") or os.getenv("BOT_TOKEN", "")
+CHAT_FROM_ENV = os.getenv("TELEGRAM_FNO_CHAT_ID", "") or os.getenv("TELEGRAM_CHAT_ID", "") or os.getenv("CHAT_ID", "")
 CHAT_IDS = []
-for cid in ["5239892901", "7507879668", os.getenv("TELEGRAM_FNO_CHAT_ID", "")]:
+for cid in ["5239892901", "7507879668", CHAT_FROM_ENV]:
     if cid and str(cid).strip() and str(cid).strip() not in CHAT_IDS:
         CHAT_IDS.append(str(cid).strip())
-STOCKS = ["BAJFINANCE","SHRIRAMFIN","HDFCLIFE","SBILIFE","BAJAJFINSV","RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","TITAN","ITC","LT","TATAMOTORS","TATASTEEL","AXISBANK","KOTAKBANK","MARUTI","SUNPHARMA","DIVISLAB","DRREDDY","CIPLA","HINDUNILVR","ASIANPAINT","NESTLEIND","BRITANNIA","DABUR","COLPAL","GODREJCP","MARICO","ULTRACEMCO","GRASIM","HINDALCO","JSWSTEEL","JINDALSTEL","TATAPOWER","NTPC","ONGC","IOC","BPCL","HINDPETRO","GAIL","COALINDIA","POWERGRID","ADANIPORTS","ADANIENT","BEL","HAL","BHEL"]
+STOCKS = ["BAJFINANCE","SHRIRAMFIN","HDFCLIFE","SBILIFE","BAJAJFINSV","RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","TITAN","ITC","LT","TATAPOWER","TATASTEEL","AXISBANK","KOTAKBANK","MARUTI","SUNPHARMA","DIVISLAB","DRREDDY","CIPLA","HINDUNILVR","ASIANPAINT","NESTLEIND","BRITANNIA","DABUR","COLPAL","GODREJCP","MARICO","ULTRACEMCO","GRASIM","HINDALCO","JSWSTEEL","JINDALSTEL","NTPC","ONGC","IOC","BPCL","HINDPETRO","GAIL","COALINDIA","POWERGRID","ADANIPORTS","ADANIENT","BEL","HAL","BHEL"]
 def ema(series, period):
     try:
         return series.ewm(span=period, adjust=False).mean()
@@ -133,14 +133,16 @@ class IndiaEngine:
             if np.isnan(sharpe):
                 sharpe = 0
             return {"return": float(ret), "win": float(win), "trades": trades, "maxDD": float(max_dd), "sharpe": float(sharpe)}
-        except Exception as e:
-            print("Backtest fail")
+        except:
             return {"return": 0, "win": 0, "trades": 0, "maxDD": 0, "sharpe": 0}
 def safe_download(sym, period="2y", interval="1d"):
     try:
         if yf is None:
             return None
-        df = yf.download(str(sym) + ".NS", period=period, interval=interval, progress=False, auto_adjust=True, timeout=20)
+        full = sym
+        if not sym.startswith("^"):
+            full = str(sym) + ".NS"
+        df = yf.download(full, period=period, interval=interval, progress=False, auto_adjust=True, timeout=30)
         if df is None or len(df) < 50:
             return None
         if isinstance(df.columns, pd.MultiIndex):
@@ -155,12 +157,14 @@ def safe_download(sym, period="2y", interval="1d"):
         if len(df) < 50:
             return None
         return df
-    except Exception as e:
+    except:
         print("Download fail " + str(sym))
         return None
 def agent4_risk():
     try:
-        nifty = safe_download("^NSEI", period="10d", interval="15m")
+        nifty = safe_download("^NSEI", period="5d", interval="1d")
+        if nifty is None:
+            nifty = safe_download("NIFTYBEES", period="5d", interval="1d")
         if nifty is None:
             return "UNKNOWN", "NIFTY data unavailable - Use 50 percent size"
         nifty["EMA20"] = ema(nifty["Close"], 20)
@@ -187,7 +191,7 @@ def send_telegram(msg):
             r = requests.post(url, json={"chat_id": str(cid), "text": msg}, timeout=20)
             print("Telegram to " + str(cid) + ": " + str(r.status_code))
             time.sleep(1)
-        except Exception as e:
+        except:
             print("Telegram fail " + str(cid))
 def main():
     print("7 AGENTS START")
@@ -216,22 +220,22 @@ def main():
                 mom_12_1 = df["Close"].pct_change(252) - df["Close"].pct_change(21)
                 mom_12_1 = mom_12_1.fillna(0)
                 mom20 = df["Close"].pct_change(20).fillna(0)
-                hm = (df["EMA20"] > df["EMA50"]) & (df["RSI"] > 55) & (df["RSI"] < 75) & (df["MACD"] > 0) & (df["ADX"] > 20)
-                optimum = hm & (vwap_dist > 0) & (vol_spike > 1.5) & (mom_12_1 > 0)
+                hm = (df["EMA20"] > df["EMA50"]) & (df["RSI"] > 50) & (df["RSI"] < 78) & (df["MACD"] > 0)
+                optimum = hm & (df["ADX"] > 18) & (vwap_dist > -1) & (mom_12_1 > -0.05)
                 hm_res = engine.backtest(df, hm)
                 opt_res = engine.backtest(df, optimum)
                 live_opt = bool(optimum.iloc[-1]) if len(optimum) > 0 else False
-                score = float(vwap_dist.iloc[-1]) + float(mom20.iloc[-1] * 100)
+                score = float(vwap_dist.iloc[-1]) + float(mom20.iloc[-1] * 100) + float(df["RSI"].iloc[-1])
                 if np.isnan(score):
                     score = 0
                 price = float(df["Close"].iloc[-1])
                 results.append({"symbol": sym, "price": price, "hm_ret": hm_res["return"], "opt_ret": opt_res["return"], "hm_win": hm_res["win"], "opt_win": opt_res["win"], "opt_sharpe": opt_res["sharpe"], "live": live_opt, "score": score})
                 print(str(sym) + ": HM " + str(round(hm_res["return"], 1)) + " OPT " + str(round(opt_res["return"], 1)) + " Live:" + str(live_opt))
-            except Exception as e:
+            except:
                 print(str(sym) + " calc fail")
                 traceback.print_exc()
                 continue
-        except Exception as e:
+        except:
             print(str(sym) + " outer fail")
             continue
     if not results:
@@ -260,19 +264,23 @@ def main():
             try:
                 sym2 = str(row["symbol"])
                 price2 = float(row["price"])
-                qty = int((10000 * size_mult) / price2) if price2 > 0 else 1
+                qty = int((20000 * size_mult) / price2) if price2 > 0 else 1
+                if qty < 1:
+                    qty = 1
                 order_id = "PAPER-" + sym2 + "-" + datetime.now().strftime("%H%M%S")
                 executed.append({"symbol": sym2, "qty": qty, "price": price2, "order_id": order_id})
             except:
                 continue
     try:
+        imp = avg_opt_win - avg_hm_win
+        imp_txt = "+" + str(round(imp, 1)) if imp >= 0 else str(round(imp, 1))
         msg = "7-AGENTS NSE OPTIMUM" + NL
         msg = msg + "Time: " + now_str() + NL + NL
         msg = msg + "AGENT 4 Risk: " + m_status + NL + m_detail + NL + NL
         msg = msg + "BACKTEST 2Y (STT+GST+Rs20):" + NL
         msg = msg + "HM Only: Ret " + str(round(avg_hm_ret, 1)) + "% Win " + str(round(avg_hm_win, 1)) + "%" + NL
         msg = msg + "OPTIMUM 7-Agents: Ret " + str(round(avg_opt_ret, 1)) + "% Win " + str(round(avg_opt_win, 1)) + "% Sharpe " + str(round(avg_sharpe, 2)) + NL
-        msg = msg + "Improvement: +" + str(round(avg_opt_win - avg_hm_win, 1)) + "% Win" + NL + NL
+        msg = msg + "Improvement: " + imp_txt + "% Win" + NL + NL
         msg = msg + "AGENT 5 Quality: ROE>15% + D/E<1.0 filter applied" + NL
         msg = msg + "TOP 5 OPTIMUM BTST:" + NL
         count = 1
@@ -289,7 +297,7 @@ def main():
         else:
             msg = msg + "No paper orders - BEARISH / No signal" + NL
         msg = msg + NL + "Paper Only - No Real Money" + NL + "Agents: 7/7 Done"
-    except Exception as e:
+    except:
         msg = "7-Agents Done. Market " + str(m_status) + ". Results: " + str(len(results)) + " stocks."
     print(msg)
     send_telegram(msg)
