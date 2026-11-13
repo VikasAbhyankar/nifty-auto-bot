@@ -1,7 +1,7 @@
 name: 7 Agents NSE Optimum
 on:
   schedule:
-    - cron: '45 9 * * 1-5' # 3:15 PM IST
+    - cron: '45 9 * * 1-5'
   workflow_dispatch:
 jobs:
   run:
@@ -9,9 +9,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with: {python-version: '3.11'}
-      - run: pip install yfinance ta pandas numpy pytz requests
-      - run: python scanners/india_engine_7_agents.py
+        with:
+          python-version: '3.11'
+      - run: pip install yfinance pandas numpy pytz requests
+      - run: python india_engine_7_agents.py
         env:
           TELEGRAM_FNO_BOT_TOKEN: ${{ secrets.TELEGRAM_FNO_BOT_TOKEN }}
           TELEGRAM_FNO_CHAT_ID: ${{ secrets.TELEGRAM_FNO_CHAT_ID }}
