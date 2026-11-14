@@ -15,7 +15,7 @@ CHAT_FROM_ENV = os.getenv("TELEGRAM_CHAT_ID", "")
 
 # 3 Chats - All must have pressed START on bot
 CHAT_IDS = []
-for cid in ["5239892901", "7507879668", CHAT_FROM_ENV]:
+for cid in ["5239892901", "9000971028", CHAT_FROM_ENV]:
     if cid and str(cid).strip() and str(cid).strip() not in CHAT_IDS:
         CHAT_IDS.append(str(cid).strip())
 
