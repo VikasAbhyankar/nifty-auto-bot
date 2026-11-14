@@ -1,10 +1,10 @@
-name: True Bala Screener V19.2
+name: True Bala V20 Multi-Agent
 on:
   schedule:
-    - cron: '30 3 * * 1-5'   # 9:00 AM IST
-    - cron: '15 4 * * 1-5'   # 9:45 AM IST
-    - cron: '30 9 * * 1-5'   # 3:00 PM IST BTST
-    - cron: '30 10 * * 1-5'  # 4:00 PM IST PRO
+    - cron: '30 3 * * 1-5'   # 9:00 AM IST = MARKET_DIR
+    - cron: '15 4 * * 1-5'   # 9:45 AM IST = DAY_SWING
+    - cron: '30 9 * * 1-5'   # 3:00 PM IST = BTST
+    - cron: '30 10 * * 1-5'  # 4:00 PM IST = PRO
   workflow_dispatch:
     inputs:
       scan_type:
@@ -12,20 +12,27 @@ on:
         required: false
         default: 'AUTO'
         type: choice
-        options: [AUTO, MARKET_DIR, BTST, PRO]
+        options:
+          - AUTO
+          - MARKET_DIR
+          - DAY_SWING
+          - BTST
+          - PRO
+permissions:
+  contents: read
 jobs:
-  scan:
+  screener:
     runs-on: ubuntu-latest
-    env:
-      TZ: Asia/Kolkata
-      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-      TELEGRAM_FNO_BOT_TOKEN: ${{ secrets.TELEGRAM_FNO_BOT_TOKEN }}
-      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-      TELEGRAM_FNO_CHAT_ID: ${{ secrets.TELEGRAM_FNO_CHAT_ID }}
-      SCAN_TYPE: ${{ github.event.inputs.scan_type || 'AUTO' }}
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with: {python-version: '3.11'}
-      - run: pip install yfinance pandas numpy requests pytz
-      - run: python augmented_ai_screener.py
+        with:
+          python-version: '3.11'
+      - run: pip install -q yfinance pandas numpy requests
+      - name: Run V20
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          SCAN_TYPE: ${{ inputs.scan_type || 'AUTO' }}
+        run: python augmented_ai_screener.py
