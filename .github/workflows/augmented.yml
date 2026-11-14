@@ -1,22 +1,26 @@
 name: MASTER V20.1 - Upstox Live - IST
 on:
   schedule:
-    - cron: '30 3 * * 1-5'  # 9:00 AM IST = 3:30 AM UTC - MARKET_DIR
-    - cron: '15 4 * * 1-5'  # 9:45 AM IST = 4:15 AM UTC - DAY_SWING
-    - cron: '30 9 * * 1-5'  # 3:00 PM IST = 9:30 AM UTC - BTST
-    - cron: '30 10 * * 1-5' # 4:00 PM IST = 10:30 AM UTC - PRO
+    - cron: '30 3 * * 1-5'
+    - cron: '15 4 * * 1-5'
+    - cron: '30 9 * * 1-5'
+    - cron: '30 10 * * 1-5'
   workflow_dispatch:
 permissions:
-  contents: write
+  contents: read
 jobs:
   trade:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
           python-version: '3.10'
+      - name: Check Files
+        run: ls -R
       - name: Install deps
         run: pip install --quiet yfinance pandas numpy requests pytz
       - name: Run V20.1 - IST + Upstox
@@ -25,4 +29,4 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           UPSTOX_ACCESS_TOKEN: ${{ secrets.UPSTOX_ACCESS_TOKEN }}
           UPSTOX_TOKEN_EXPIRY: ${{ secrets.UPSTOX_TOKEN_EXPIRY }}
-        run: python Augmented_ai_screener.py
+        run: python nifty-auto-bot/Augmented_ai_screener.py
