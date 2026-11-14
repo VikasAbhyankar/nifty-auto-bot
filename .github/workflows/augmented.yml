@@ -1,38 +1,28 @@
-name: True Bala V20 Multi-Agent
+name: MASTER V20.1 - Upstox Live - IST
 on:
   schedule:
-    - cron: '30 3 * * 1-5'   # 9:00 AM IST = MARKET_DIR
-    - cron: '15 4 * * 1-5'   # 9:45 AM IST = DAY_SWING
-    - cron: '30 9 * * 1-5'   # 3:00 PM IST = BTST
-    - cron: '30 10 * * 1-5'  # 4:00 PM IST = PRO
+    - cron: '30 3 * * 1-5'  # 9:00 AM IST = 3:30 AM UTC - MARKET_DIR
+    - cron: '15 4 * * 1-5'  # 9:45 AM IST = 4:15 AM UTC - DAY_SWING
+    - cron: '30 9 * * 1-5'  # 3:00 PM IST = 9:30 AM UTC - BTST
+    - cron: '30 10 * * 1-5' # 4:00 PM IST = 10:30 AM UTC - PRO
   workflow_dispatch:
-    inputs:
-      scan_type:
-        description: 'Scan Type'
-        required: false
-        default: 'AUTO'
-        type: choice
-        options:
-          - AUTO
-          - MARKET_DIR
-          - DAY_SWING
-          - BTST
-          - PRO
 permissions:
-  contents: read
+  contents: write
 jobs:
-  screener:
+  trade:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
-      - run: pip install -q yfinance pandas numpy requests
-      - name: Run V20
+          python-version: '3.10'
+      - name: Install deps
+        run: pip install --quiet yfinance pandas numpy requests pytz
+      - name: Run V20.1 - IST + Upstox
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          SCAN_TYPE: ${{ inputs.scan_type || 'AUTO' }}
-        run: python augmented_ai_screener.py
+          UPSTOX_ACCESS_TOKEN: ${{ secrets.UPSTOX_ACCESS_TOKEN }}
+          UPSTOX_TOKEN_EXPIRY: ${{ secrets.UPSTOX_TOKEN_EXPIRY }}
+        run: python Augmented_ai_screener.py
