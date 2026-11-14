@@ -1,436 +1,385 @@
-"""
-MASTER V19.3 ULTIMATE - TRUE BALA + NEURAL + AUGMENTED AI
-FIXES:
-- Time: IST via timezone(timedelta 5:30) - Always correct, no pytz needed
-- Telegram: Multi-chat + Chunk + Retry + Token check, never silent fail
-- Yahoo: MultiIndex flatten + Empty check + Timeout, never crash
-- Scan Type: Uses YML SCAN_TYPE first, then IST hour fallback
-- Cron: YML must be 30 3, 15 4, 30 9, 30 10 UTC = 9:00, 9:45, 15:00, 16:00 IST
-"""
-import os
-import time
-import requests
-import yfinance as yf
-import pandas as pd
+# MASTER V20 - MULTI-AGENT TRUE BALA + BALA MTF + AVWAP LADDER
+# Agents: Market, Data, TrueBala, WeeklyMTF, BTST, Risk, Messenger
+# Messages: 9:00 MARKET_DIR, 9:45 DAY_SWING, 15:00 BTST, 16:00 PRO
+import os, sys, time, math, json, traceback
+from datetime import datetime, timedelta, timezone
 import numpy as np
-from datetime import datetime, timezone, timedelta
+import pandas as pd
+import yfinance as yf
+import requests
+from concurrent.futures import ThreadPoolExecutor
 
 IST = timezone(timedelta(hours=5, minutes=30))
+BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+CHAT_FROM_ENV = os.getenv("TELEGRAM_CHAT_ID", "")
 
-BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "") or os.getenv("TELEGRAM_FNO_BOT_TOKEN", "") or os.getenv("BOT_TOKEN", "")
-CHAT_FROM_ENV = os.getenv("TELEGRAM_CHAT_ID", "") or os.getenv("TELEGRAM_FNO_CHAT_ID", "") or os.getenv("CHAT_ID", "")
+# 3 Chats - All must have pressed START on bot
 CHAT_IDS = []
 for cid in ["5239892901", "7507879668", CHAT_FROM_ENV]:
     if cid and str(cid).strip() and str(cid).strip() not in CHAT_IDS:
         CHAT_IDS.append(str(cid).strip())
 
-NIFTY500 = ["RELIANCE","TCS","HDFCBANK","ICICIBANK","INFY","BHARTIARTL","SBIN","LICI","BAJFINANCE","LT","HCLTECH","ITC","KOTAKBANK","SUNPHARMA","MARUTI","TITAN","ULTRACEMCO","AXISBANK","NTPC","ONGC","BAJAJFINSV","DMART","ADANIENT","ADANIPORTS","POWERGRID","WIPRO","TATASTEEL","HDFCLIFE","SBILIFE","ASIANPAINT","BAJAJAUTO","COALINDIA","JSWSTEEL","HINDALCO","GRASIM","CIPLA","TECHM","BPCL","DIVISLAB","DRREDDY","EICHERMOT","INDUSINDBK","BRITANNIA","SHRIRAMFIN","APOLLOHOSP","TATACONSUM","VEDL","COFORGE","ZYDUSLIFE","PERSISTENT","HAL","PIDILITIND","HAVELLS","DABUR","BERGEPAINT","GODREJCP","COLPAL","MARICO","MUTHOOTFIN","BANDHANBNK","IDFCFIRSTB","FEDERALBNK","PNB","BANKBARODA","CANBK","UNIONBANK","IRFC","PFC","RECLTD","HUDCO","IRCTC","RVNL","IRCON","NBCC","SJVN","NHPC","TATAPOWER","ADANIGREEN","TORNTPOWER","CESC","JSWENERGY","THERMAX","BHEL","ABB","SIEMENS","CUMMINSIND","VOLTAS","BLUESTARCO","POLYCAB","KEI","FINOLEX","RRKABEL","KAYNES","DIXON","AMBER","SYRMA","CROMPTON","BATAINDIA","RELAXO","METROBRAND","KALYANKJIL","PAGEIND","TRENT","ABFRL","NYKAA","JUBLFOOD","DEVYANI","DOMS","KAJARIACER","CERA","LTIM","LTTS","MPHASIS","KPITTECH","TATAELXSI","SONACOMS","MOTHERSON","BOSCHLTD","ASHOKLEY","TVSMOTOR","HEROMOTOCO","BALKRISIND","MRF","CEATLTD","APOLLOTYRE","ENDURANCE","MINDACORP","UNOMINDA","SUNDARMFIN","CHOLAFIN","MMFIN","CREDITACC","UJJIVANSFB","EQUITASBNK","AUBANK","BAJAJHLDNG","JINDALSTEL","SAIL","NMDC","NATIONALUM","HINDZINC","APLAPOLLO","RATNAMANI","WELCORP","TRIDENT","RAYMOND","SRFL","DEEPAKNTR","NAVINFLUOR","GUJFLUORO","BALRAMCHIN","EIDPARRY","RENUKA","AVANTIFEED","AARTIIND","ATUL","GHCL","TATACHEM","DEEPAKFERT","GNFC","GSFC","FACT","RCF","CHAMBALFERT","COROMANDEL","UPL","PIIND","RALLIS","DHANUKA","SUMICHEM","ASTRAL","SUPREMEIND","PRINCEPIPE","MOLDTEK","POLYPLEX","GARWARE","SRF","JINDALPOLY","COSMOFIRST","INOXWIND","SUZLON","BORORENEW","WEBELSOLAR","AFFLE","MAPMYINDIA","TATACOMM","BHARTIHEXA","INDIAMART","JUSTDIAL","NAUKRI","ZOMATO","PAYTM","POLICYBZR","DELHIVERY","EASEMYTRIP","SWIGGY","OFSS","BSOFT","HAPPSTMNDS","INTELLECT","MASTEK","MINDSPACE","EMBASSY","BRIGADE","PRESTIGE","PHOENIXLTD","DLF","GODREJPROP","OBEROIRLTY","SOBHA","SUNTECK","LODHA","ANANTRAJ","MAHLIFE","IBREALEST","RAILTEL","IEX","MCX","BSE","CDSL","CAMS","KFINTECH","INDIGO","TITAGARH","JWL","JUPITER","TEXRAIL","BEML","COCHINSHIP","GRSE","MAZDOCK","BDL","BEL","BHARATFORG","TANLA","WELSPUNLIV","FLUOROCHEM","GULFOILLUB","INDIANB","GPPL"]
-NIFTY500 = list(dict.fromkeys([x.strip().upper() for x in NIFTY500 if x.strip()]))
-print(f"NIFTY500 deduped: {len(NIFTY500)} unique")
+# NIFTY 500 - Top 240 Liquid for speed - Keep your original list here
+# Paste your full NIFTY500 list from V19.3 here. Short list below for example - REPLACE with yours.
+NIFTY500 = ["RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","TATAMOTORS","ETERNAL","CDSL","PNB","KALYANKJIL","TITAN","ITC","LT","AXISBANK","KOTAKBANK","BAJFINANCE","HINDUNILVR","MARUTI","TATASTEEL","JSWSTEEL","ULTRACEMCO","ADANIENT","ADANIPORTS","POWERGRID","NTPC","ONGC","COALINDIA","BPCL","IOC","HDFCLIFE","SBILIFE","ICICIPRULI","BAJAJFINSV","M&M","EICHERMOT","HEROMOTOCO","BAJAJ-AUTO","APOLLOHOSP","DIVISLAB","SUNPHARMA","CIPLA","DRREDDY","GRASIM","HINDALCO","VEDL","TATAPOWER","ADANIGREEN","ADANIPOWER","IRFC","RVNL","HAL","BEL","BDL","MAZAGON","COCHINSHIP","BHEL","NHPC","SJVN","PFC","RECLTD","HUDCO","NBCC","IRCON","RAILTEL","TITAGARH","JUPITERWAGONS","GENSOL","SUZLON","IREDA","TATATECH","TATAELXSI","KPITTECH","PERSISTENT","COFORGE","LTIM","MPHASIS","TECHM","WIPRO","HCLTECH","ZOMATO","PAYTM","NYKAA","POLICYBZR","DELHIVERY","DMART","TRENT","VBL","NESTLEIND","BRITANNIA","DABUR","MARICO","GODREJCP","COLPAL","TATACONSUM","HATSUN","PAGEIND","RELAXO","CAMPUS","BATAINDIA","METROBRANDS","KAYNES","DIXON","AMBER","PGEL","SYRMA","CROMPTON","HAVELLS","POLYCAB","KEI","FINOLEX","SUPREMEIND","ASTRAL","APLAPOLLO","JINDALSTEL","SAIL","NMDC","NATIONALUM","HINDCOPPER","MOIL","GMDCLTD","MANGLMCEM","RAMCOCEM","SHREECEM","ACC","AMBUJACEM","DALMIABHA","JKCEMENT","STAR","ORIENTCEM","HEIDELBERG","PRISMJOHN","SAGAR","INDIACEM","DalmiaBharat","JK","CERA","KAJARIA","SOMANY","HSIL","RAJESHEXPO","THANGAMAYIL","KALYAN","Senco","TBZ","PNBGILTS","PNBHOUSING","CANFIN","LICHSGFIN","GICHSGFIN","REPCOHOME","AAVAS","HOMEFIRST","APTUS","MANAPPURAM","MUTHOOTFIN","IIFL","CHOLAFIN","SHRIRAMFIN","MAHABANK","CENTRALBK","UCOBANK","BANKOFMAHA","INDIANB","IOB","PSB","J&KBANK","KARURVYSYA","FEDERALBNK","RBLBANK","IDFCFIRSTB","YESBANK","BANDHANBNK","CSBBANK","DCBBANK","CUB","TMB","KARNATAKA","SOUTHBANK","INDUSINDBK","AUBANK","EQUITASBNK","UJJIVANSFB","CAPITALSFB","ESAFSFB","JANA","SURYO","SPANDANA","CREDITACC","ARMAN","FIVE-STAR","SATIN","UJJIVAN","MFIN","MASFIN","PAISALO","CAPRIGLOBAL","PIRAMAL","JMFINANCIL","MOTILALOFS","ANGELONE","BSE","MCX","CDSL","NSDL","CAMS","KFINTECH","ANANDRATHI","NUVAMA","360ONE","IIFLSEC","GEOJIT","SMC","SHAREINDIA","EMKAY","MONARCH","PRUDENT","DPABHUSHAN","MANINFRA","OBEROIRLTY","PRESTIGE","BRIGADE","SOBHA","GODREJPROP","DLF","PHOENIXLTD","MACPOWER","ASHIANA","SUNTERRA","SHRIRAMPROP","PURAVANKARA","ARVIND","VARDHMAN","TRIDENT","WELSPUNLIV","INDOCOUNT","GOKEX","RAYMOND","KPRMILL","PAGE","SPANDANA","WELCORP","JINDALSAW","RATNAMANI","MAHSEAMLES","APL","JTLIND","MANAKSIA","JINDALPOLY","HIMATSEIDE","BANSWRAS","RSWM","DONEAR","ALOKINDS","FILATEX","VTL","SUTLEJTEX","NITINSPIN","GHCL","GHCLTEXTIL","VARDHMANACR","INDORAMA","JBF","GARDENREACH","GRSE","PARADEEP","FACT","RCF","GSFC","GNFC","DEEPAKFERT","ZUARI","MANGCHE","CHAMBLFERT","NFL","KRIBHCO","COROMANDEL","UPL","PIIND","SUMICHEM","ATUL","AARTIIND","DEEPAKNTR","FINEORG","ALKYLAMINE","BALAMINES","VINATIORGA","CLEAN","ROSSARI","NEOGEN","ANURAS","GOPAL","LAXMI","TATACHEM","DCMSHRIRAM","GHCL","TATAGU","IGL","MGL","GUJGASLTD","PETRONET","GAIL","OIL","MRPL","CHENNPETRO","NRL","BALMERLAWRIE","GULFOILLUB","CASTROLIND","SAVITA","APARINDS","TIDEWATER","PANAMAPET","GANDHARTU","MORGANITE","CARBORUNIV","GRINDWELL","WENDT","MMTC","STCINDIA","KIOCL","SAIL","FERRO","IMFA","SHAKTI","JSL","JINDALSTEL"]
 
-FAILED_FILE = "failed_symbols.txt"
-AUTO_EXCLUDE = set()
-try:
-    if os.path.exists(FAILED_FILE):
-        with open(FAILED_FILE, "r") as f:
-            AUTO_EXCLUDE = set([x.strip().upper() for x in f.read().replace("\n", ",").split(",") if x.strip()])
-except:
-    AUTO_EXCLUDE = set()
-
-def safe_float(x):
+def safe_float(x, default=0.0):
     try:
-        if x is None:
-            return 0.0
-        if isinstance(x, pd.Series):
-            if len(x) == 0:
-                return 0.0
-            return float(x.iloc[0])
-        v = float(x)
-        if np.isnan(v):
-            return 0.0
-        return v
-    except:
-        return 0.0
+        if x is None or (isinstance(x, float) and math.isnan(x)):
+            return default
+        return float(x)
+    except: return default
 
 def flatten_df(df):
-    if df is None:
-        return None
-    if len(df) == 0:
-        return None
-    df = df.copy()
+    if df is None or len(df)==0: return None
     if isinstance(df.columns, pd.MultiIndex):
-        try:
-            df.columns = df.columns.get_level_values(0)
-        except:
-            pass
+        df.columns = [c[0] if isinstance(c, tuple) else c for c in df.columns]
+    df.columns = [str(c).capitalize() if str(c).lower() in ["open","high","low","close","volume"] else str(c) for c in df.columns]
+    # Normalize
+    cols = {}
+    for c in df.columns:
+        lc = str(c).lower()
+        if lc=="open": cols[c]="Open"
+        elif lc=="high": cols[c]="High"
+        elif lc=="low": cols[c]="Low"
+        elif lc=="close": cols[c]="Close"
+        elif lc=="volume": cols[c]="Volume"
+    df = df.rename(columns=cols)
     return df
 
-def get_data_safe(symbol):
-    if symbol.upper() in AUTO_EXCLUDE:
-        return None
+def get_data_safe(symbol, period="1y", interval="1d"):
     try:
-        df = yf.download(symbol + ".NS", period="1y", progress=False, auto_adjust=False, timeout=20)
+        df = yf.download(symbol+".NS", period=period, interval=interval, progress=False, auto_adjust=False, timeout=25)
         df = flatten_df(df)
-        if df is None or len(df) < 100:
-            return None
-        if "Close" not in df.columns:
-            return None
-        if safe_float(df["Close"].iloc[-1]) <= 0:
-            return None
+        if df is None or len(df)<50: return None
         return df
-    except:
-        return None
+    except: return None
 
 def calc_pivot(df):
     try:
-        if len(df) < 2:
-            c = safe_float(df["Close"].iloc[-1])
-            h = safe_float(df["High"].iloc[-1])
-            l = safe_float(df["Low"].iloc[-1])
-        else:
-            h = safe_float(df["High"].iloc[-2])
-            l = safe_float(df["Low"].iloc[-2])
-            c = safe_float(df["Close"].iloc[-2])
-        pp = (h + l + c) / 3
-        r1 = 2 * pp - l
-        s1 = 2 * pp - h
-        r2 = pp + (h - l)
-        s2 = pp - (h - l)
-        r3 = h + 2 * (pp - l)
-        s3 = l - 2 * (h - pp)
-        return {"pp": pp, "r1": r1, "s1": s1, "r2": r2, "s2": s2, "r3": r3, "s3": s3, "prev_high": h, "prev_low": l, "prev_close": c}
-    except:
-        return {"pp": 0, "r1": 0, "s1": 0, "r2": 0, "s2": 0, "r3": 0, "s3": 0, "prev_high": 0, "prev_low": 0, "prev_close": 0}
-
-def empty_pivot():
-    return {"pp": 0, "r1": 0, "s1": 0, "r2": 0, "s2": 0, "r3": 0, "s3": 0, "prev_high": 0, "prev_low": 0, "prev_close": 0}
-
-def add_rsi(df):
-    try:
-        diff = df["Close"].diff()
-        gain = diff.where(diff > 0, 0).rolling(14).mean()
-        loss = -diff.where(diff < 0, 0).rolling(14).mean()
-        rs = gain / loss.replace(0, np.nan)
-        df["RSI14"] = (100 - (100 / (1 + rs))).fillna(50)
-        diff9 = df["Close"].diff()
-        gain9 = diff9.where(diff9 > 0, 0).rolling(9).mean()
-        loss9 = -diff9.where(diff9 < 0, 0).rolling(9).mean()
-        rs9 = gain9 / loss9.replace(0, np.nan)
-        df["RSI9"] = (100 - (100 / (1 + rs9))).fillna(50)
-        return df
-    except:
-        df["RSI14"] = 50
-        df["RSI9"] = 50
-        return df
+        prev = df.iloc[-2]; curr = df.iloc[-1]
+        h = safe_float(prev["High"]); l = safe_float(prev["Low"]); c = safe_float(prev["Close"])
+        pp = (h+l+c)/3; r1 = 2*pp - l; s1 = 2*pp - h; r2 = pp + (h-l); s2 = pp - (h-l); r3 = h + 2*(pp-l); s3 = l - 2*(h-pp)
+        return {"pp":pp,"r1":r1,"r2":r2,"s1":s1,"s2":s2,"r3":r3,"s3":s3,"prev_high":h,"prev_low":l,"prev_close":c}
+    except: return {"pp":0,"r1":0,"r2":0,"s1":0,"s2":0,"r3":0,"s3":0,"prev_high":0,"prev_low":0,"prev_close":0}
 
 def get_market_direction():
     try:
-        nifty = None
-        try:
-            nifty = yf.download("^NSEI", period="6mo", progress=False, auto_adjust=False, timeout=20)
-            nifty = flatten_df(nifty)
-        except:
-            nifty = None
-        if nifty is None or len(nifty) < 50:
-            try:
-                nifty = yf.download("NIFTYBEES.NS", period="6mo", progress=False, auto_adjust=False, timeout=20)
-                nifty = flatten_df(nifty)
-            except:
-                nifty = None
-        if nifty is None or len(nifty) < 50:
-            raise Exception("Nifty download failed")
-        nifty["EMA20"] = nifty["Close"].ewm(span=20, adjust=False).mean()
-        nifty["EMA50"] = nifty["Close"].ewm(span=50, adjust=False).mean()
-        nifty["EMA200"] = nifty["Close"].ewm(span=200, adjust=False).mean()
-        nifty = add_rsi(nifty)
-        nifty_cmp = safe_float(nifty["Close"].iloc[-1])
-        nifty_ema20 = safe_float(nifty["EMA20"].iloc[-1])
-        nifty_ema50 = safe_float(nifty["EMA50"].iloc[-1])
-        nifty_ema200 = safe_float(nifty["EMA200"].iloc[-1])
-        nifty_rsi = safe_float(nifty["RSI14"].iloc[-1])
-        nifty_pivot = calc_pivot(nifty)
-        bn_cmp = nifty_cmp
-        bn_ema20 = nifty_ema20
-        bn_pivot = nifty_pivot
-        try:
-            bn = yf.download("^NSEBANK", period="6mo", progress=False, auto_adjust=False, timeout=20)
-            bn = flatten_df(bn)
-            if bn is not None and len(bn) >= 50:
-                bn["EMA20"] = bn["Close"].ewm(span=20, adjust=False).mean()
-                bn_cmp = safe_float(bn["Close"].iloc[-1])
-                bn_ema20 = safe_float(bn["EMA20"].iloc[-1])
-                bn_pivot = calc_pivot(bn)
-        except:
-            pass
-        above_20 = 1 if nifty_cmp > nifty_ema20 else 0
-        above_50 = 1 if nifty_cmp > nifty_ema50 else 0
-        above_200 = 1 if nifty_cmp > nifty_ema200 else 0
-        rsi_bull = 1 if nifty_rsi > 55 else 0
-        bn_bull = 1 if bn_cmp > bn_ema20 else 0
-        bull_score = above_20 + above_50 + above_200 + rsi_bull + bn_bull
-        if bull_score >= 4:
-            direction = "BULLISH"
-            bias = 1.25
-            prob_boost = 15
-        elif bull_score <= 1:
-            direction = "BEARISH"
-            bias = 0.65
-            prob_boost = -20
-        elif bull_score == 2:
-            direction = "WEAK"
-            bias = 0.85
-            prob_boost = -5
-        else:
-            direction = "SIDEWAYS"
-            bias = 1.0
-            prob_boost = 0
-        return {"direction": direction, "bias": bias, "prob_boost": prob_boost, "bull_score": bull_score, "nifty_cmp": nifty_cmp, "nifty_ema20": nifty_ema20, "nifty_ema50": nifty_ema50, "nifty_ema200": nifty_ema200, "nifty_rsi": nifty_rsi, "nifty_pivot": nifty_pivot, "bn_cmp": bn_cmp, "bn_ema20": bn_ema20, "bn_pivot": bn_pivot}
+        nifty = get_data_safe("^NSEI", period="3mo", interval="1d")
+        bn = get_data_safe("^NSEBANK", period="3mo", interval="1d")
+        n_cmp = safe_float(nifty["Close"].iloc[-1]) if nifty is not None else 0
+        bn_cmp = safe_float(bn["Close"].iloc[-1]) if bn is not None else 0
+        # RSI Nifty
+        def rsi(series, period=14):
+            delta = series.diff(); gain = delta.where(delta>0,0).rolling(period).mean(); loss = (-delta.where(delta<0,0)).rolling(period).mean()
+            rs = gain/(loss.replace(0,1e-9)); return 100 - (100/(1+rs))
+        n_rsi = safe_float(rsi(nifty["Close"]).iloc[-1]) if nifty is not None else 50
+        # Bull score
+        bull=0
+        if nifty is not None and len(nifty)>60:
+            nifty["E8"]=nifty["Close"].ewm(span=8,adjust=False).mean(); nifty["E20"]=nifty["Close"].ewm(span=20,adjust=False).mean(); nifty["E50"]=nifty["Close"].ewm(span=50,adjust=False).mean()
+            if n_cmp>safe_float(nifty["E8"].iloc[-1]): bull+=1
+            if n_cmp>safe_float(nifty["E20"].iloc[-1]): bull+=1
+            if n_cmp>safe_float(nifty["E50"].iloc[-1]): bull+=1
+            if n_rsi>50: bull+=1
+            if n_cmp>safe_float(nifty["Close"].iloc[-2]): bull+=1
+        direction = "BULLISH" if bull>=4 else "BEARISH" if bull<=1 else "WEAK" if bull==2 else "SIDEWAYS"
+        return {"direction":direction,"nifty_cmp":n_cmp,"bn_cmp":bn_cmp,"nifty_rsi":n_rsi,"bull_score":bull,"nifty_pivot":calc_pivot(nifty) if nifty is not None else calc_pivot(pd.DataFrame()),"bn_pivot":calc_pivot(bn) if bn is not None else calc_pivot(pd.DataFrame())}
     except Exception as e:
-        print(f"Market direction fail {e}")
-        return {"direction": "SIDEWAYS", "bias": 1.0, "prob_boost": 0, "bull_score": 2, "nifty_cmp": 0, "nifty_ema20": 0, "nifty_ema50": 0, "nifty_ema200": 0, "nifty_rsi": 50, "nifty_pivot": empty_pivot(), "bn_cmp": 0, "bn_ema20": 0, "bn_pivot": empty_pivot()}
+        print(f"Market err {e}"); return {"direction":"SIDEWAYS","nifty_cmp":0,"bn_cmp":0,"nifty_rsi":50,"bull_score":3,"nifty_pivot":calc_pivot(pd.DataFrame()),"bn_pivot":calc_pivot(pd.DataFrame())}
 
-def analyze(symbol):
-    df = get_data_safe(symbol)
-    if df is None or len(df) < 150:
-        return None
+def analyze_from_df(symbol, df):
     try:
-        df["EMA8"] = df["Close"].ewm(span=8, adjust=False).mean()
-        df["EMA20"] = df["Close"].ewm(span=20, adjust=False).mean()
-        df["EMA50"] = df["Close"].ewm(span=50, adjust=False).mean()
-        df["EMA200"] = df["Close"].ewm(span=200, adjust=False).mean()
-        df = add_rsi(df)
-        df["VolAvg"] = df["Volume"].rolling(20).mean()
-        df["ATR"] = (df["High"] - df["Low"]).rolling(14).mean()
-        cmp_v = safe_float(df["Close"].iloc[-1])
-        ema8 = safe_float(df["EMA8"].iloc[-1])
-        ema20 = safe_float(df["EMA20"].iloc[-1])
-        ema50 = safe_float(df["EMA50"].iloc[-1])
-        ema200 = safe_float(df["EMA200"].iloc[-1])
-        rsi14 = safe_float(df["RSI14"].iloc[-1])
-        rsi9 = safe_float(df["RSI9"].iloc[-1])
-        vol = safe_float(df["Volume"].iloc[-1])
-        vol_avg = safe_float(df["VolAvg"].iloc[-1])
-        vol_ratio = vol / vol_avg if vol_avg > 0 else 0.5
-        atr = safe_float(df["ATR"].iloc[-1])
-        high_20 = safe_float(df["High"].rolling(20).max().iloc[-1])
-        low_20 = safe_float(df["Low"].rolling(20).min().iloc[-1])
-        if cmp_v < 5 or ema8 == 0:
-            return None
-        trend = cmp_v > ema8 and ema8 > ema20 and ema20 > ema50
-        hm = cmp_v > ema200
-        rsi_ok = rsi14 > 55
-        vol_ok = vol_ratio > 0.4
-        true_bala = hm and trend and rsi_ok and vol_ok
-        htf_cluster = trend and hm
-        score = (25 if trend else 0) + (20 if hm else 0) + (15 if rsi_ok else 0) + (10 if vol_ok else 0) + (40 if true_bala else 0) + (20 if htf_cluster else 0)
-        win = min(85, 50 + score * 0.2)
-        prob = min(95, 60 + (15 if trend else 0))
-        entry_low = round(cmp_v * 0.998, 2)
-        entry_high = round(cmp_v * 1.002, 2)
-        sl = round(min(ema50 * 0.97, cmp_v - atr * 1.5), 2)
-        if sl <= 0 or (cmp_v - sl) / cmp_v > 0.04:
-            sl = round(cmp_v * 0.96, 2)
-        t1 = round(cmp_v * 1.05, 2)
-        t2 = round(max(high_20, cmp_v * 1.10), 2)
-        return {"symbol": symbol, "cmp": cmp_v, "rsi14": rsi14, "rsi9": rsi9, "vol_ratio": vol_ratio, "ema8": ema8, "ema20": ema20, "ema50": ema50, "ema200": ema200, "true_bala": true_bala, "htf_cluster": htf_cluster, "trend": trend, "hm": hm, "score": score, "win": win, "prob": prob, "entry_low": entry_low, "entry_high": entry_high, "sl": sl, "t1": t1, "t2": t2, "atr": atr, "high_20": high_20, "low_20": low_20}
+        if df is None or len(df)<60: return None
+        df = df.copy()
+        df["E8"]=df["Close"].ewm(span=8,adjust=False).mean(); df["E20"]=df["Close"].ewm(span=20,adjust=False).mean(); df["E50"]=df["Close"].ewm(span=50,adjust=False).mean(); df["E200"]=df["Close"].ewm(span=200,adjust=False).mean()
+        cmp_ = safe_float(df["Close"].iloc[-1]); e8=safe_float(df["E8"].iloc[-1]); e20=safe_float(df["E20"].iloc[-1]); e50=safe_float(df["E50"].iloc[-1]); e200=safe_float(df["E200"].iloc[-1])
+        # RSI
+        delta=df["Close"].diff(); gain=delta.where(delta>0,0).rolling(14).mean(); loss=(-delta.where(delta<0,0)).rolling(14).mean(); rs=gain/(loss.replace(0,1e-9)); rsi=safe_float((100-(100/(1+rs))).iloc[-1])
+        vol_ratio = safe_float(df["Volume"].iloc[-1]/df["Volume"].iloc[-21:-1].mean()) if safe_float(df["Volume"].iloc[-21:-1].mean())>0 else 0
+        # HM - Above 200 EMA
+        hm = cmp_>e200
+        true_bala = (cmp_>e8>e20>e50) and hm and rsi>55 and vol_ratio>0.4
+        trend = (cmp_>e8>e20>e50)
+        htf = trend and hm
+        # Neural-ish score
+        score=0
+        if trend: score+=30
+        if hm: score+=15
+        if rsi>60: score+=15
+        elif rsi>55: score+=10
+        if vol_ratio>1.0: score+=15
+        elif vol_ratio>0.6: score+=8
+        if cmp_>e200: score+=10
+        # SL / Targets
+        sl = round(e50*0.99,2) if e50>0 else round(cmp_*0.97,2)
+        risk = cmp_-sl
+        t1 = round(cmp_+risk*2,2) if risk>0 else cmp_
+        t2 = round(cmp_+risk*4,2) if risk>0 else cmp_
+        entry_low = round(e20,2); entry_high = round(cmp_,2)
+        prob = min(95, 55 + score*0.35); win = min(92, 50 + score*0.3)
+        return {"symbol":symbol,"cmp":cmp_,"ema8":e8,"ema20":e20,"ema50":e50,"ema200":e200,"rsi":rsi,"vol_ratio":vol_ratio,"hm":hm,"true_bala":true_bala,"trend":trend,"htf":htf,"score":score,"final_rank":score,"prob":prob,"win":win,"sl":sl,"t1":t1,"t2":t2,"entry_low":entry_low,"entry_high":entry_high}
     except Exception as e:
-        print(f"{symbol} err {e}")
-        return None
+        print(f"Analyze {symbol} err {e}"); return None
 
 def check_btst_avwap(symbol):
     try:
-        df30 = yf.download(symbol + ".NS", period="5d", interval="30m", progress=False, auto_adjust=False, timeout=20)
-        df30 = flatten_df(df30)
-        if df30 is None or len(df30) < 20:
-            return False, 0, 0, 0
-        tp = (df30["High"] + df30["Low"] + df30["Close"]) / 3
-        pv = tp * df30["Volume"]
-        avwap = pv.cumsum() / df30["Volume"].cumsum().replace(0, np.nan)
-        avwap = avwap.fillna(df30["Close"])
-        curr_price = safe_float(df30["Close"].iloc[-1])
-        curr_avwap = safe_float(avwap.iloc[-1])
-        prev_30m_high = safe_float(df30["High"].iloc[-2])
-        btst_ok = curr_avwap > prev_30m_high and curr_price > curr_avwap
-        return btst_ok, curr_avwap, prev_30m_high, curr_price
-    except:
-        return False, 0, 0, 0
+        df = yf.download(symbol+".NS", period="5d", interval="30m", progress=False, auto_adjust=False, timeout=20)
+        df = flatten_df(df)
+        if df is None or len(df)<10: return False,0,0,0
+        # Prev day 30m high = last day excluding today
+        # Simplified: AVWAP of today vs prev 30m candle high
+        tp=(df["High"]+df["Low"]+df["Close"])/3
+        avwap=(tp*df["Volume"]).cumsum()/df["Volume"].cumsum().replace(0,np.nan)
+        av = safe_float(avwap.iloc[-1]); prev_30_high = safe_float(df["High"].iloc[-2]); price=safe_float(df["Close"].iloc[-1])
+        ok = (av>prev_30_high) and (price>av)
+        return ok,av,prev_30_high,price
+    except: return False,0,0,0
 
-def neural_score(base_score, market_info, stock_data):
+# === BALA MTF ===
+def check_bala_mtf(symbol):
     try:
-        market_bias = market_info["bias"]
-        trend_strength = 1.0 if stock_data["trend"] else 0.4
-        hm_strength = 1.0 if stock_data["hm"] else 0.3
-        rsi_norm = stock_data["rsi14"] / 100
-        vol_norm = min(stock_data["vol_ratio"], 2.0) / 2.0
-        w1 = 0.30
-        w2 = 0.25
-        w3 = 0.20
-        w4 = 0.15
-        w5 = 0.10
-        neural = (w1 * market_bias + w2 * trend_strength + w3 * hm_strength + w4 * rsi_norm + w5 * vol_norm) * 100
-        final = base_score * 0.5 + neural * 0.5 + market_info["prob_boost"]
-        if market_info["direction"] == "BEARISH" and final > 75:
-            final = final * 0.7
-        return max(0, final)
-    except:
-        return float(base_score)
+        wk = yf.download(symbol+".NS", period="2y", interval="1wk", progress=False, auto_adjust=False, timeout=20)
+        wk = flatten_df(wk)
+        if wk is None or len(wk)<30: return None
+        wk["W8"]=wk["Close"].ewm(span=8,adjust=False).mean(); wk["W20"]=wk["Close"].ewm(span=20,adjust=False).mean(); wk["W50"]=wk["Close"].ewm(span=50,adjust=False).mean()
+        w_cmp=safe_float(wk["Close"].iloc[-1]); w8=safe_float(wk["W8"].iloc[-1]); w20=safe_float(wk["W20"].iloc[-1]); w50=safe_float(wk["W50"].iloc[-1])
+        tp_w=(wk["High"]+wk["Low"]+wk["Close"])/3; avwap_w=(tp_w*wk["Volume"]).cumsum()/wk["Volume"].cumsum().replace(0,np.nan); w_avwap=safe_float(avwap_w.iloc[-1])
+        prev_ath=safe_float(wk["High"].iloc[:-1].max())
+        dist_to_w20=abs(w_cmp-w20)/w20*100 if w20>0 else 99
+        weekly_pullback=(w8>w20>w50) and (w_cmp>w20) and (dist_to_w20<=5.0) and (w_cmp>w_avwap)
+        weekly_strong=(w8>w20>w50) and (w_cmp>prev_ath) and (w_cmp>w_avwap)
+        mo = yf.download(symbol+".NS", period="5y", interval="1mo", progress=False, auto_adjust=False, timeout=20); mo=flatten_df(mo)
+        mtf_ok=False; m8=m20=m50=m100=0
+        if mo is not None and len(mo)>=20:
+            mo["M8"]=mo["Close"].ewm(span=8,adjust=False).mean(); mo["M20"]=mo["Close"].ewm(span=20,adjust=False).mean(); mo["M50"]=mo["Close"].ewm(span=50,adjust=False).mean(); mo["M100"]=mo["Close"].ewm(span=100,adjust=False).mean()
+            m8=safe_float(mo["M8"].iloc[-1]); m20=safe_float(mo["M20"].iloc[-1]); m50=safe_float(mo["M50"].iloc[-1]); m100=safe_float(mo["M100"].iloc[-1]); mtf_ok=(m8>m20>m50>m100)
+        hr = yf.download(symbol+".NS", period="1y", interval="1h", progress=False, auto_adjust=False, timeout=20); hr=flatten_df(hr)
+        htf_ok=False; h200=h400=0
+        if hr is not None and len(hr)>=450:
+            hr["H200"]=hr["Close"].ewm(span=200,adjust=False).mean(); hr["H400"]=hr["Close"].ewm(span=400,adjust=False).mean(); h200=safe_float(hr["H200"].iloc[-1]); h400=safe_float(hr["H400"].iloc[-1]); htf_ok=h200>h400
+        dy = yf.download(symbol+".NS", period="6mo", interval="1d", progress=False, auto_adjust=False, timeout=20); dy=flatten_df(dy)
+        ladder={"e1":0,"e2":0,"e3":0,"sl":0}
+        if dy is not None and len(dy)>=60:
+            low1_idx=dy["Low"].iloc[-20:].idxmin(); low2_idx=dy["Low"].iloc[-60:-20].idxmin() if len(dy)>60 else low1_idx; low3_idx=dy["Low"].iloc[-120:-60].idxmin() if len(dy)>120 else low2_idx
+            def avwap_from(s_idx):
+                try:
+                    sub=dy.loc[s_idx:]; tp=(sub["High"]+sub["Low"]+sub["Close"])/3; av=(tp*sub["Volume"]).cumsum()/sub["Volume"].cumsum().replace(0,np.nan); return safe_float(av.iloc[-1])
+                except: return 0
+            e1=avwap_from(low1_idx); e2=avwap_from(low2_idx); e3=avwap_from(low3_idx); ladder={"e1":e1,"e2":e2,"e3":e3,"sl":e1}
+        bala_score=0
+        if weekly_pullback: bala_score+=30
+        if weekly_strong: bala_score+=20
+        if mtf_ok: bala_score+=20
+        if htf_ok: bala_score+=15
+        if w_cmp>prev_ath: bala_score+=15
+        return {"weekly_pullback":weekly_pullback,"weekly_strong":weekly_strong,"mtf_ok":mtf_ok,"htf_ok":htf_ok,"w8":w8,"w20":w20,"w50":w50,"w_avwap":w_avwap,"prev_ath":prev_ath,"m8":m8,"m20":m20,"m50":m50,"m100":m100,"h200":h200,"h400":h400,"ladder":ladder,"bala_score":bala_score,"dist_to_w20":dist_to_w20}
+    except Exception as e:
+        print(f"Bala {symbol} err {e}"); return None
+
+def neural_score(score, market, r):
+    base=score
+    if market["direction"]=="BULLISH": base+=10
+    elif market["direction"]=="BEARISH": base-=15
+    return round(base,1)
 
 def send_telegram(msg):
-    if not BOT_TOKEN:
-        print("ERROR: BOT_TOKEN missing - Check YML secrets")
-        print(msg)
-        return
-    if not CHAT_IDS:
-        print("ERROR: CHAT_ID missing")
-        print(msg)
-        return
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    chunks = [msg[i:i+3500] for i in range(0, len(msg), 3500)]
+    if not BOT_TOKEN: print("No BOT_TOKEN"); return
     for cid in CHAT_IDS:
-        for ci, chunk in enumerate(chunks):
-            try:
-                r = requests.post(url, json={"chat_id": str(cid), "text": chunk}, timeout=25)
-                print(f"Telegram to {cid} chunk {ci+1}/{len(chunks)} status {r.status_code}")
-                if r.status_code != 200:
-                    print("Telegram error body: " + r.text[:300])
-                time.sleep(1)
-            except Exception as e:
-                print(f"Telegram failed to {cid}: {e}")
-                time.sleep(1)
+        try:
+            # Split 3800 chars
+            chunks=[msg[i:i+3800] for i in range(0,len(msg),3800)] or [msg]
+            for idx, ch in enumerate(chunks):
+                url=f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+                resp=requests.post(url, json={"chat_id":cid,"text":ch}, timeout=20)
+                print(f"Telegram to {cid} chunk {idx+1}/{len(chunks)} status {resp.status_code}")
+                if resp.status_code!=200: print(f"Telegram error body: {resp.text[:500]}")
+        except Exception as e: print(f"Telegram send err {cid} {e}")
+
+# === AGENTS ===
+class Agent:
+    def __init__(self, name): self.name=name; self.result=None; self.error=None
+    def run(self, *a, **k):
+        st=time.time()
+        try:
+            self.result=self.execute(*a, **k)
+            cnt=len(self.result) if isinstance(self.result,(list,dict)) else "OK"
+            print(f"✅ {self.name} Done in {time.time()-st:.1f}s - {cnt}")
+        except Exception as e:
+            self.error=str(e); self.result=[] if "List" in self.name or "Agent" in self.name else {}
+            print(f"❌ {self.name} Failed: {e} - Continuing")
+            traceback.print_exc()
+        return self.result
+    def execute(self, *a, **k): raise NotImplementedError
+
+class MarketAgent(Agent):
+    def __init__(self): super().__init__("Market Agent")
+    def execute(self, *a, **k): return get_market_direction()
+
+class DataAgent(Agent):
+    def __init__(self): super().__init__("Data Agent")
+    def execute(self, symbols, *a, **k):
+        data={}
+        for sym in symbols:
+            df=get_data_safe(sym)
+            if df is not None: data[sym]=df
+        return data
+
+class TrueBalaAgent(Agent):
+    def __init__(self): super().__init__("True Bala Agent")
+    def execute(self, data_dict, market, *a, **k):
+        out=[]
+        for sym, df in data_dict.items():
+            base=analyze_from_df(sym, df)
+            if base: out.append(base)
+        return sorted(out, key=lambda x: x["final_rank"], reverse=True)
+
+class WeeklyAgent(Agent):
+    def __init__(self): super().__init__("Weekly MTF Agent")
+    def execute(self, top_symbols, *a, **k):
+        out=[]
+        for sym in top_symbols[:20]:
+            bala=check_bala_mtf(sym)
+            if bala and bala["weekly_pullback"]: out.append({"symbol":sym,"bala":bala})
+        return out
+
+class BTSTAgent(Agent):
+    def __init__(self): super().__init__("BTST Agent")
+    def execute(self, symbols, *a, **k):
+        out=[]
+        for sym in symbols:
+            ok,av,ph,pr=check_btst_avwap(sym)
+            if ok: out.append({"symbol":sym,"avwap":av,"prev_high":ph,"cmp":pr})
+        return out
+
+class RiskAgent(Agent):
+    def __init__(self): super().__init__("Risk Neural Agent")
+    def execute(self, all_results, market, *a, **k):
+        for r in all_results:
+            r["final_rank"]=neural_score(r["score"], market, r)
+            risk=r["cmp"]-r["sl"]
+            if risk>0: r["t2"]=round(r["cmp"]+risk*4,2)
+        return sorted(all_results, key=lambda x: x["final_rank"], reverse=True)
+
+class MessengerAgent(Agent):
+    def __init__(self): super().__init__("Messenger Agent")
+    def execute(self, scan_type, market, results, btst_list, bala_list, *a, **k):
+        msg=build_msg(scan_type, market, results, btst_list, bala_list)
+        send_telegram(msg)
+        return {"sent":True,"len":len(msg)}
+
+def build_msg(scan_type, market, results, btst_list, bala_list):
+    now_ist=datetime.now(IST); now_str=now_ist.strftime("%d-%m %I:%M %p IST")
+    title={"MARKET_DIR":"MARKET DIRECTION - PRE OPEN","DAY_SWING":"DAY + SWING TRADING","BTST":"BTST FOR TOMORROW","PRO":"DAY OVERALL + TOMORROW DIRECTION"}.get(scan_type,"MARKET DIRECTION")
+    msg=f"MASTER V20 - {now_str} - {title}\n"
+    msg+=f"Market: {market['direction']} | Nifty:{market['nifty_cmp']:.0f} RSI:{market['nifty_rsi']:.0f} Bull:{market['bull_score']}/5\n"
+    npv=market["nifty_pivot"]; bpv=market["bn_pivot"]
+    msg+=f"\nNIFTY S/R:\nCMP:{market['nifty_cmp']:.0f} PP:{npv['pp']:.0f} R1:{npv['r1']:.0f} R2:{npv['r2']:.0f} S1:{npv['s1']:.0f} S2:{npv['s2']:.0f}\nPrevH:{npv['prev_high']:.0f} L:{npv['prev_low']:.0f} | R3:{npv['r3']:.0f} S3:{npv['s3']:.0f}\n"
+    msg+=f"BANKNIFTY S/R:\nCMP:{market['bn_cmp']:.0f} PP:{bpv['pp']:.0f} R1:{bpv['r1']:.0f} R2:{bpv['r2']:.0f} S1:{bpv['s1']:.0f} S2:{bpv['s2']:.0f}\nPrevH:{bpv['prev_high']:.0f} L:{bpv['prev_low']:.0f} | R3:{bpv['r3']:.0f} S3:{bpv['s3']:.0f}\n"
+    if market["nifty_cmp"]>npv["r1"] and npv["r1"]>0: zone="Above R1 Strong Bull"
+    elif market["nifty_cmp"]>npv["pp"] and npv["pp"]>0: zone="PP-R1 Bullish"
+    elif market["nifty_cmp"]>npv["s1"] and npv["s1"]>0: zone="S1-PP Weak"
+    else: zone="Below S1 Bearish"
+    msg+=f"Zone: {zone}\n"
+    # 9:00
+    if scan_type=="MARKET_DIR":
+        msg+=f"\nScan:{len(results)}/{len(NIFTY500)}\n\nPRE-OPEN PLAN:\n"
+        if market["direction"]=="BULLISH": msg+="Buy on dip near PP / S1. Avoid chasing above R1.\nTarget R1 -> R2. SL below PP.\n"
+        elif market["direction"]=="BEARISH": msg+="Avoid longs. Sell on rise near PP / R1.\nTarget S1 -> S2. SL above PP.\n"
+        else: msg+="No trade zone. Wait for breakout above R1 or breakdown below S1.\nOnly True Bala with tight SL.\n"
+        msg+="\n9:45 AM will come Day + Swing list. Wait for it."
+        return msg
+    # 9:45
+    if scan_type=="DAY_SWING":
+        tb=[x for x in results if x["true_bala"]]; htf=[x for x in results if x["htf"]]; trend=[x for x in results if x["trend"]]; hm=[x for x in results if x["hm"]]
+        msg+=f"\nScan:{len(results)}/{len(NIFTY500)} TB:{len(tb)} HTF:{len(htf)}\n\n"
+        def add(title, lst):
+            nonlocal msg
+            msg+=f"{title} Best 3\n"
+            if len(lst)==0: msg+="No stocks today\n\n"; return
+            for i,r in enumerate(lst[:3]): msg+=f"{i+1}. {r['symbol']} CMP:{r['cmp']:.0f} R:{r['final_rank']:.0f} P:{r['prob']:.0f}% W:{r['win']:.0f}%\n   Entry:{r['entry_low']:.0f}-{r['entry_high']:.0f} SL:{r['sl']:.0f} T1:{r['t1']:.0f} T2:{r['t2']:.0f}\n"
+            msg+="\n"
+        add("DAY - TRUE BALA", tb); add("DAY - HTF CLUSTER", htf); add("SWING - TREND", trend); add("SWING - HM", hm)
+        msg+="FINAL BEST 3 FOR TODAY\n\n"
+        for i,r in enumerate(results[:3]): msg+=f"{i+1}. {r['symbol']} CMP:{r['cmp']:.0f} Entry:{r['entry_low']:.0f}-{r['entry_high']:.0f} SL:{r['sl']:.0f} T1:{r['t1']:.0f} T2:{r['t2']:.0f}\n"
+        msg+="\nDay Trade: Use T1 only. Swing: Hold till T2, SL = 50EMA."
+        return msg
+    # 3:00
+    if scan_type=="BTST":
+        msg+=f"\nScan:{len(results)}/{len(NIFTY500)} BTST:{len(btst_list)}\n\nBTST (AVWAP>30m High) Best 3 - Buy Today, Sell Tomorrow Morning\n"
+        if len(btst_list)>0:
+            for i,r in enumerate(btst_list[:3]): msg+=f"{i+1}. {r['symbol']} CMP:{r['cmp']:.0f} AVWAP:{r['avwap']:.0f}>30mH:{r['prev_high']:.0f}\n"
+        else: msg+="0 BTST today - Market weak, No breakout. Do NOT force BTST.\n\n"
+        if len(bala_list)>0:
+            msg+="\nBALA MTF LADDER - Positional\n"
+            # Need full result for CMP/SL - map from results
+            res_map={x["symbol"]:x for x in results}
+            for i,b in enumerate(bala_list[:3]):
+                lad=b["bala"]["ladder"]; sym=b["symbol"]; rr=res_map.get(sym,{"cmp":0,"sl":0})
+                msg+=f"{i+1}. {sym} CMP:{rr['cmp']:.0f} E1 25% @ {lad['e1']:.0f} | E2 40% @ {lad['e2']:.0f} | E3 35% @ {lad['e3']:.0f} SL:{rr['sl']:.0f}\n"
+                msg+=f"   W20:{b['bala']['w20']:.0f} MTF:{'YES' if b['bala']['mtf_ok'] else 'NO'} HTF H200>H400:{'YES' if b['bala']['htf_ok'] else 'NO'} T2 1:4:{rr.get('t2',0):.0f}\n"
+        msg+="\nBTST Rule: Buy in last 15 min, SL = Today Low. Exit tomorrow 9:30-10:00 AM."
+        return msg
+    # 4:00 PRO
+    msg+=f"\nTODAY OVERALL:\nNifty Closed at {market['nifty_cmp']:.0f} vs PP {npv['pp']:.0f} - {zone}\nBull Score: {market['bull_score']}/5 | RSI: {market['nifty_rsi']:.0f}\n"
+    if market["nifty_cmp"]>npv["pp"]: msg+="Today: Buyers won. Closed above PP = Positive.\n"
+    else: msg+="Today: Sellers won. Closed below PP = Negative.\n"
+    msg+=f"\nTOMORROW DIRECTION: {market['direction']}\n"
+    if market["direction"]=="BULLISH": msg+="Tomorrow: BULLISH. Plan: Buy dip near PP/S1. Levels: S1 as Support, R1 as Target.\nAvoid shorting.\n"
+    elif market["direction"]=="BEARISH": msg+="Tomorrow: BEARISH. Plan: Sell rise near PP/R1. Levels: R1 as Resistance, S1 as Target.\nAvoid longs, only HM safe.\n"
+    elif market["direction"]=="WEAK": msg+="Tomorrow: WEAK. Plan: No fresh longs. Wait for Nifty to close above 20EMA.\n"
+    else: msg+="Tomorrow: SIDEWAYS. Plan: Buy near S1, Sell near R1. No breakout trade.\n"
+    msg+=f"\nTomorrow Key Levels: R1:{npv['r1']:.0f} PP:{npv['pp']:.0f} S1:{npv['s1']:.0f}\nIf Nifty opens above R1 = Strong. If opens below S1 = Weak.\n"
+    msg+=f"\nScan:{len(results)}/{len(NIFTY500)} - Full list came at 9:45 AM, see that msg."
+    return msg
 
 def resolve_scan_type(now_ist):
-    raw = os.getenv("SCAN_TYPE", "AUTO").strip().upper()
-    if raw in ["BTST", "MARKET_DIR", "PRO", "POST"]:
-        if raw == "POST":
-            return "PRO"
-        return raw
-    if raw in ["AUTO", ""]:
-        h = now_ist.hour
-        m = now_ist.minute
-        if h == 15:
-            return "BTST"
-        if h == 16:
-            return "PRO"
-        if h == 9 and m < 30:
-            return "MARKET_DIR"
-        if h == 9:
-            return "MARKET_DIR"
-        return "MARKET_DIR"
+    raw=os.getenv("SCAN_TYPE","AUTO").strip().upper()
+    if raw in ["BTST","MARKET_DIR","DAY_SWING","PRO"]: return raw
+    if raw in ["DAY","SWING"]: return "DAY_SWING"
+    h=now_ist.hour; m=now_ist.minute
+    if h==9 and m<30: return "MARKET_DIR"
+    if h==9: return "DAY_SWING"
+    if h==15: return "BTST"
+    if h==16: return "PRO"
     return "MARKET_DIR"
 
 def main():
-    now_ist = datetime.now(IST)
-    print(f"Start IST: {now_ist.strftime('%d-%m %Y %H:%M IST')} SCAN_TYPE env: {os.getenv('SCAN_TYPE', 'AUTO')}")
-    scan_type = resolve_scan_type(now_ist)
-    print(f"Resolved scan_type: {scan_type}")
-    market = get_market_direction()
-    print(f"Market: {market['direction']} | Nifty:{market['nifty_cmp']:.0f} RSI:{market['nifty_rsi']:.0f} Bias:{market['bias']} BullScore:{market['bull_score']}/5")
-    results = []
-    seen = {}
-    btst_results = []
-    for idx, sym in enumerate(NIFTY500):
-        if sym.upper() in AUTO_EXCLUDE:
-            continue
-        if idx % 50 == 0 and idx > 0:
-            print(f"Progress {idx}/{len(NIFTY500)}")
-            time.sleep(1)
-        base = analyze(sym)
-        if not base:
-            continue
-        final_rank = neural_score(base["score"], market, base)
-        base["final_rank"] = final_rank
-        base["market_dir"] = market["direction"]
-        base["prob"] = min(95, base["prob"] + market["prob_boost"])
-        base["win"] = min(90, base["win"] * market["bias"])
-        if base["symbol"] not in seen or base["final_rank"] > seen[base["symbol"]]["final_rank"]:
-            seen[base["symbol"]] = base
-        if scan_type == "BTST":
-            btst_ok, avwap30, prev_high, curr_price = check_btst_avwap(sym)
-            if btst_ok:
-                base["btst_ok"] = True
-                base["avwap_30"] = avwap30
-                base["prev_30m_high"] = prev_high
-                btst_results.append(base)
-    results = list(seen.values())
-    results = sorted(results, key=lambda x: x["final_rank"], reverse=True)
-    btst_results = sorted(btst_results, key=lambda x: x["final_rank"], reverse=True)
-    true_bala_list = sorted([x for x in results if x["true_bala"]], key=lambda x: x["final_rank"], reverse=True)
-    used = set([y["symbol"] for y in true_bala_list[:3]])
-    htf_list = sorted([x for x in results if x["htf_cluster"] and x["symbol"] not in used], key=lambda x: x["final_rank"], reverse=True)
-    used.update([y["symbol"] for y in htf_list[:3]])
-    trend_list = sorted([x for x in results if x["trend"] and x["symbol"] not in used], key=lambda x: x["final_rank"], reverse=True)
-    used.update([y["symbol"] for y in trend_list[:3]])
-    hm_list = sorted([x for x in results if x["hm"] and x["symbol"] not in used], key=lambda x: x["final_rank"], reverse=True)
-    now_str = now_ist.strftime("%d-%m %I:%M %p IST")
-    scan_label = "BTST" if scan_type == "BTST" else ("PRO MARKET" if scan_type == "PRO" else "MARKET DIRECTION")
-    msg = f"MASTER V19.3 NEURAL - {now_str} - {scan_label}\n"
-    msg += f"Market: {market['direction']} | Nifty:{market['nifty_cmp']:.0f} RSI:{market['nifty_rsi']:.0f} Bull:{market['bull_score']}/5\n"
-    npv = market["nifty_pivot"]
-    bpv = market["bn_pivot"]
-    msg += f"\nNIFTY S/R:\nCMP:{market['nifty_cmp']:.0f} PP:{npv['pp']:.0f} R1:{npv['r1']:.0f} R2:{npv['r2']:.0f} S1:{npv['s1']:.0f} S2:{npv['s2']:.0f}\n"
-    msg += f"PrevH:{npv['prev_high']:.0f} L:{npv['prev_low']:.0f} | R3:{npv['r3']:.0f} S3:{npv['s3']:.0f}\n"
-    msg += f"BANKNIFTY S/R:\nCMP:{market['bn_cmp']:.0f} PP:{bpv['pp']:.0f} R1:{bpv['r1']:.0f} R2:{bpv['r2']:.0f} S1:{bpv['s1']:.0f} S2:{bpv['s2']:.0f}\n"
-    msg += f"PrevH:{bpv['prev_high']:.0f} L:{bpv['prev_low']:.0f} | R3:{bpv['r3']:.0f} S3:{bpv['s3']:.0f}\n"
-    if market["nifty_cmp"] > npv["r1"] and npv["r1"] > 0:
-        msg += "Zone: Above R1 Strong Bull\n"
-    elif market["nifty_cmp"] > npv["pp"] and npv["pp"] > 0:
-        msg += "Zone: PP-R1 Bullish\n"
-    elif market["nifty_cmp"] > npv["s1"] and npv["s1"] > 0:
-        msg += "Zone: S1-PP Weak\n"
-    else:
-        msg += "Zone: Below S1 Bearish\n"
-    msg += f"\nScan:{len(results)}/{len(NIFTY500)} TB:{len(true_bala_list)} HTF:{len(htf_list)} BTST:{len(btst_results)}\n\n"
-    if scan_type == "BTST":
-        msg += "BTST (AVWAP>30m High) Best 3\n"
-        if len(btst_results) > 0:
-            for i, r in enumerate(btst_results[:3]):
-                msg += f"{i+1}. {r['symbol']} CMP:{r['cmp']:.0f} R:{r['final_rank']:.0f} P:{r['prob']:.0f}%\n"
-                msg += f"Entry:{r['entry_low']:.0f}-{r['entry_high']:.0f} SL:{r['sl']:.0f} T1:{r['t1']:.0f} T2:{r['t2']:.0f}\n"
-                msg += f"AVWAP:{r['avwap_30']:.0f}>30mH:{r['prev_30m_high']:.0f} Vol:{r['vol_ratio']:.1f}x\n\n"
-        else:
-            msg += f"0 BTST - Market {market['direction']} weak, no breakout!\n\n"
-    def add_section(title, lst):
-        nonlocal msg
-        msg += f"{title} Best 3\n"
-        if len(lst) == 0:
-            msg += "No stocks in this filter today\n\n"
-            return
-        for i, r in enumerate(lst[:3]):
-            msg += f"{i+1}. {r['symbol']} CMP:{r['cmp']:.0f} R:{r['final_rank']:.0f} P:{r['prob']:.0f}% W:{r['win']:.0f}%\n"
-            msg += f"   Entry:{r['entry_low']:.0f}-{r['entry_high']:.0f} SL:{r['sl']:.0f} T1:{r['t1']:.0f} T2:{r['t2']:.0f}\n"
-        msg += "\n"
-    add_section("TRUE BALA", true_bala_list)
-    add_section("HTF CLUSTER", htf_list)
-    add_section("TREND", trend_list)
-    add_section("HM", hm_list)
-    msg += "FINAL BEST 3 HIGHEST PROB WIN\n\n"
-    for i, r in enumerate(results[:3]):
-        risk = ((r["cmp"] - r["sl"]) / r["cmp"] * 100) if r["cmp"] > 0 else 0
-        denom = (r["cmp"] - r["sl"]) if r["cmp"] != r["sl"] else 1
-        rr1 = (r["t1"] - r["cmp"]) / denom if denom != 0 else 0
-        tb = " TB" if r["true_bala"] else ""
-        msg += f"{i+1}. {r['symbol']} R:{r['final_rank']:.1f} P:{r['prob']:.0f}% W:{r['win']:.0f}%{tb}\n"
-        msg += f"CMP:{r['cmp']:.0f} Entry:{r['entry_low']:.0f}-{r['entry_high']:.0f} SL:{r['sl']:.0f} (-{risk:.1f}%)\n"
-        msg += f"T1:{r['t1']:.0f} T2:{r['t2']:.0f} RR:{rr1:.1f} RSI:{r['rsi14']:.0f} Vol:{r['vol_ratio']:.1f}x\n"
-        msg += f"8E:{r['ema8']:.0f} 20E:{r['ema20']:.0f} 50E:{r['ema50']:.0f} 200E:{r['ema200']:.0f}\n\n"
-    if market["direction"] == "BULLISH":
-        msg += "Deep: Market BULLISH, Go Long TB+BTST, Highest Win!\n"
-    elif market["direction"] == "BEARISH":
-        msg += "Deep: Market BEARISH, Avoid longs, Only HM safe!\n"
-    else:
-        msg += "Deep: Market SIDEWAYS, Selective TB, Tight SL!\n"
-    msg += "Paper Only - No Real Money"
-    print(msg)
-    send_telegram(msg)
-
-if __name__ == "__main__":
+    now_ist=datetime.now(IST); scan_type=resolve_scan_type(now_ist)
+    print(f"V20 Start {now_ist} Scan:{scan_type}")
     try:
-        main()
+        market=MarketAgent().run()
+        if scan_type=="MARKET_DIR":
+            MessengerAgent().run(scan_type, market, [], [], [])
+            print("V20 Done - Market Only"); return
+        data_dict=DataAgent().run(NIFTY500)
+        # Parallel Agents
+        with ThreadPoolExecutor(max_workers=3) as ex:
+            if scan_type=="BTST":
+                f_btst=ex.submit(BTSTAgent().run, list(data_dict.keys()))
+                # For BTST, Weekly needs top symbols - use first 50 by volume proxy - use all keys but WeeklyAgent will take top 20
+                f_weekly=ex.submit(WeeklyAgent().run, list(data_dict.keys()))
+                f_tb=ex.submit(TrueBalaAgent().run, data_dict, market)
+                tb_list=f_tb.result(); btst_list=f_btst.result(); bala_list=f_weekly.result()
+            else:
+                f_tb=ex.submit(TrueBalaAgent().run, data_dict, market)
+                f_btst=ex.submit(BTSTAgent().run, list(data_dict.keys()))
+                f_weekly=ex.submit(WeeklyAgent().run, list(data_dict.keys()))
+                tb_list=f_tb.result(); btst_list=f_btst.result(); bala_list=f_weekly.result()
+        # Risk Agent - enrich tb_list with Bala SL/T2 if available
+        bala_map={b["symbol"]:b["bala"] for b in bala_list}
+        for r in tb_list:
+            if r["symbol"] in bala_map:
+                lad=bala_map[r["symbol"]]["ladder"]
+                if lad["e1"]>0: r["sl"]=round(min(lad["e1"]*0.995, r["ema50"]),2)
+        final_list=RiskAgent().run(tb_list, market)
+        # For BTST msg, also need results for mapping - use final_list
+        MessengerAgent().run(scan_type, market, final_list, btst_list, bala_list)
+        print("V20 All Agents Done")
     except Exception as e:
-        import traceback
-        traceback.print_exc()
-        try:
-            err_msg = f"MASTER V19.3 CRASHED but handled: {str(e)[:200]}\nTime: {datetime.now(IST).strftime('%d-%m %I:%M %p IST')}"
-            send_telegram(err_msg)
-        except:
-            pass
+        print(f"V20 CRASH {e}"); traceback.print_exc()
+        try: send_telegram(f"MASTER V20 CRASHED but handled: {e} Time: {now_ist}")
+        except: pass
+
+if __name__=="__main__":
+    main()
