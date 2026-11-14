@@ -1,6 +1,7 @@
 name: True Bala Screener V19.2
 on:
   schedule:
+    - cron: '30 3 * * 1-5'   # 9:00 AM IST = Opening Scan
     - cron: '15 4 * * 1-5'   # 9:45 AM IST = Market Direction
     - cron: '30 9 * * 1-5'   # 3:00 PM IST = BTST
     - cron: '30 10 * * 1-5'  # 4:00 PM IST = Pro Market
@@ -19,14 +20,19 @@ on:
 jobs:
   scan:
     runs-on: ubuntu-latest
+    env:
+      TZ: Asia/Kolkata
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_FNO_BOT_TOKEN: ${{ secrets.TELEGRAM_FNO_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      TELEGRAM_FNO_CHAT_ID: ${{ secrets.TELEGRAM_FNO_CHAT_ID }}
+      SCAN_TYPE: ${{ github.event.inputs.scan_type || 'AUTO' }}
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
-      - run: pip install yfinance pandas numpy requests
-      - env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          SCAN_TYPE: ${{ inputs.scan_type }}
+          python-version: '3.11'
+      - name: Install packages
+        run: pip install yfinance pandas numpy requests pytz
+      - name: Run Screener
         run: python augmented_ai_screener.py
