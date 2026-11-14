@@ -49,7 +49,12 @@ def flatten_df(df):
 
 def get_data_safe(symbol, period="1y", interval="1d"):
     try:
-        df = yf.download(symbol+".NS", period=period, interval=interval, progress=False, auto_adjust=False, timeout=25)
+        # FIX: ^NSEI and ^NSEBANK should NOT get .NS added
+        if symbol.startswith("^"):
+            ticker = symbol
+        else:
+            ticker = symbol + ".NS"
+        df = yf.download(ticker, period=period, interval=interval, progress=False, auto_adjust=False, timeout=25)
         df = flatten_df(df)
         if df is None or len(df)<50: return None
         return df
