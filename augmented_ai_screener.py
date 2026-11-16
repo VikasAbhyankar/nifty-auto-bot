@@ -1,8 +1,9 @@
-# MASTER V20.1 - MULTI-AGENT TRUE BALA + BALA MTF + AVWAP LADDER
+# MASTER V20.1 - FINAL CLEAN - BOT 1 = FINDER ONLY
+# Job: Find strongest 3 Swing stocks, 1x a day ONLY at 9:55 AM IST, Mon-Fri
 # Data: Upstox Live (Primary) + Yahoo Fallback | Telegram: You + Prashant + Nishant
-# Timings IST: 9:00 MARKET_DIR, 9:45 DAY_SWING, 15:00 BTST, 16:00 PRO
-# Agents: Market, Data, TrueBala, WeeklyMTF, BTST, Risk, Messenger
+# Agents: Market, Data, TrueBala, WeeklyMTF, Risk, Messenger
 # PAPER TRADING ONLY - No live order, No real GTT. Virtual SL/T1/T2 tracked in paper_trades.csv
+# TIME GUARD: If GitHub runs late (5 PM / 6 PM queue), exit without Telegram.
 import os, sys, time, math, json, traceback, csv
 from datetime import datetime, timedelta, timezone
 import numpy as np
@@ -25,8 +26,6 @@ UPSTOX_EXPIRY = os.getenv("UPSTOX_TOKEN_EXPIRY", "2027-11-14")
 UPSTOX_ENABLED = bool(UPSTOX_TOKEN)
 UPSTOX_BASE = "https://api.upstox.com/v3"
 
-# 3 Chats - All must have pressed START on bot
-# 5239892901 = Prashant, 9000971028 = Nishant, 3rd = You from Secret
 CHAT_IDS = []
 _raw_ids = []
 if CHAT_FROM_ENV:
@@ -40,11 +39,11 @@ print(f"V20.1 Telegram Targets: {CHAT_IDS} | Upstox Enabled: {UPSTOX_ENABLED}")
 
 # ===== PAPER TRADING - BOT1 SWING ONLY =====
 PAPER_FILE = "paper_trades.csv"
-PAPER_QTY = 100  # Virtual qty only, for P&L calculation
+PAPER_QTY = 100
 
 def swing_gtt_plan(entry_low, entry_high, sl_bot, t1_bot, t2_bot):
     try:
-        sl_gtt = round(float(sl_bot) * 0.995)  # -0.5% buffer to avoid hunting
+        sl_gtt = round(float(sl_bot) * 0.995)
         entry_avg = round((float(entry_low) + float(entry_high)) / 2)
         return {"entry": entry_avg, "sl_gtt": sl_gtt, "t1": round(float(t1_bot)), "t2": round(float(t2_bot)), "trail_sl": entry_avg}
     except Exception as e:
@@ -54,22 +53,21 @@ def swing_gtt_plan(entry_low, entry_high, sl_bot, t1_bot, t2_bot):
 def record_paper_trade(bot_name, symbol, plan, qty=PAPER_QTY):
     try:
         file_exists = os.path.exists(PAPER_FILE)
+        if file_exists:
+            try:
+                with open(PAPER_FILE, "r") as rf:
+                    rows = list(csv.DictReader(rf))
+                    today = datetime.now(IST).strftime("%Y-%m-%d")
+                    for r in rows:
+                        if r.get("date") == today and r.get("bot") == bot_name and r.get("symbol") == symbol and r.get("status") == "OPEN":
+                            print(f"Paper duplicate skip {bot_name} {symbol}")
+                            return False
+            except Exception:
+                pass
         with open(PAPER_FILE, "a", newline="") as f:
             w = csv.writer(f)
             if not file_exists:
                 w.writerow(["date", "bot", "symbol", "entry", "sl", "t1", "t2", "qty", "status", "exit_price", "pnl", "exit_reason"])
-            # Avoid duplicate same day same symbol same bot
-            if file_exists:
-                try:
-                    with open(PAPER_FILE, "r") as rf:
-                        rows = list(csv.DictReader(rf))
-                        today = datetime.now(IST).strftime("%Y-%m-%d")
-                        for r in rows:
-                            if r.get("date") == today and r.get("bot") == bot_name and r.get("symbol") == symbol and r.get("status") == "OPEN":
-                                print(f"Paper duplicate skip {bot_name} {symbol}")
-                                return False
-                except Exception:
-                    pass
             w.writerow([datetime.now(IST).strftime("%Y-%m-%d"), bot_name, symbol, plan["entry"], plan["sl_gtt"], plan["t1"], plan["t2"], qty, "OPEN", "", "", ""])
         print(f"Paper recorded {bot_name} {symbol} Entry {plan['entry']} SL {plan['sl_gtt']} T1 {plan['t1']} T2 {plan['t2']}")
         return True
@@ -78,15 +76,12 @@ def record_paper_trade(bot_name, symbol, plan, qty=PAPER_QTY):
         return False
 
 def check_paper_trades():
-    # Called at start of every run - checks OPEN trades, updates CSV, returns summary lines
-    # Returns list of strings like "EICHERMOT hit T1 +10% Profit Rs X (PAPER)"
     updates = []
     if not os.path.exists(PAPER_FILE):
         return updates
     try:
         with open(PAPER_FILE, "r") as f:
             rows = list(csv.DictReader(f))
-            fieldnames = f.name if hasattr(f, 'name') else None
         if not rows:
             return updates
         changed = False
@@ -102,7 +97,6 @@ def check_paper_trades():
                 qty = float(r.get("qty") or PAPER_QTY)
                 if entry <= 0:
                     continue
-                # Get CMP - Upstox live first, fallback Yahoo via get_data_safe
                 cmp_price = None
                 try:
                     if UPSTOX_ENABLED:
@@ -119,7 +113,6 @@ def check_paper_trades():
                 if not cmp_price or cmp_price <= 0:
                     continue
                 pnl_pct = (cmp_price - entry) / entry * 100 if entry else 0
-                # Priority: SL first, then T2, then T1
                 if cmp_price <= sl:
                     pnl = round((cmp_price - entry) * qty, 2)
                     r["status"] = "CLOSED_SL"
@@ -137,16 +130,11 @@ def check_paper_trades():
                     updates.append(f"{symbol} PAPER EXIT - T2 HIT @ {cmp_price:.0f} P&L {pnl_pct:.1f}% Rs {pnl:.0f} (PAPER)")
                     changed = True
                 elif t1 > 0 and cmp_price >= t1:
-                    # T1 hit = book 50% - we keep trade OPEN but note it, do not close fully
-                    # To avoid spam, only add update once - mark with exit_reason T1_HIT but keep OPEN
                     if r.get("exit_reason") != "T1_HIT":
                         pnl_50 = round((t1 - entry) * (qty * 0.5), 2)
                         r["exit_reason"] = "T1_HIT"
                         updates.append(f"{symbol} PAPER T1 HIT @ {t1:.0f} P&L {pnl_pct:.1f}% Book 50% Rs {pnl_50:.0f} | Trail SL to Entry {entry:.0f} (PAPER)")
                         changed = True
-                else:
-                    # Still open - no update
-                    pass
             except Exception as e:
                 print(f"check_paper {symbol} err {e}")
                 continue
@@ -159,21 +147,6 @@ def check_paper_trades():
     except Exception as e:
         print(f"check_paper_trades err {e}")
         return updates
-
-def get_paper_open_summary():
-    # For display in message - OPEN trades with CMP
-    lines = []
-    if not os.path.exists(PAPER_FILE):
-        return lines
-    try:
-        with open(PAPER_FILE, "r") as f:
-            rows = list(csv.DictReader(f))
-        for r in rows:
-            if r.get("status") == "OPEN":
-                lines.append(f"{r.get('symbol')} {r.get('bot')} Entry {r.get('entry')} SL {r.get('sl')} T1 {r.get('t1')} T2 {r.get('t2')}")
-        return lines
-    except Exception:
-        return lines
 
 # ===== UPSTOX CLIENT =====
 def upstox_headers():
@@ -284,7 +257,7 @@ def get_data_safe(symbol, period="1y", interval="1d"):
 
 def calc_pivot(df):
     try:
-        prev = df.iloc[-2]; curr = df.iloc[-1]
+        prev = df.iloc[-2]
         h = safe_float(prev["High"]); l = safe_float(prev["Low"]); c = safe_float(prev["Close"])
         pp = (h+l+c)/3; r1 = 2*pp - l; s1 = 2*pp - h; r2 = pp + (h-l); s2 = pp - (h-l); r3 = h + 2*(pp-l); s3 = l - 2*(h-pp)
         return {"pp":pp,"r1":r1,"r2":r2,"s1":s1,"s2":s2,"r3":r3,"s3":s3,"prev_high":h,"prev_low":l,"prev_close":c}
@@ -342,22 +315,6 @@ def analyze_from_df(symbol, df):
         return {"symbol":symbol,"cmp":cmp_,"ema8":e8,"ema20":e20,"ema50":e50,"ema200":e200,"rsi":rsi,"vol_ratio":vol_ratio,"hm":hm,"true_bala":true_bala,"trend":trend,"htf":htf,"score":score,"final_rank":score,"prob":prob,"win":win,"sl":sl,"t1":t1,"t2":t2,"entry_low":entry_low,"entry_high":entry_high}
     except Exception as e:
         print(f"Analyze {symbol} err {e}"); return None
-
-def check_btst_avwap(symbol):
-    try:
-        df = None
-        if UPSTOX_ENABLED:
-            df = get_upstox_candles(symbol, "30minute", 5)
-        if df is None:
-            df = yf.download(symbol+".NS", period="5d", interval="30m", progress=False, auto_adjust=False, timeout=20)
-            df = flatten_df(df)
-        if df is None or len(df)<10: return False,0,0,0
-        tp=(df["High"]+df["Low"]+df["Close"])/3
-        avwap=(tp*df["Volume"]).cumsum()/df["Volume"].cumsum().replace(0,np.nan)
-        av = safe_float(avwap.iloc[-1]); prev_30_high = safe_float(df["High"].iloc[-2]); price=safe_float(df["Close"].iloc[-1])
-        ok = (av>prev_30_high) and (price>av)
-        return ok,av,prev_30_high,price
-    except: return False,0,0,0
 
 def check_bala_mtf(symbol):
     try:
@@ -459,14 +416,6 @@ class WeeklyAgent(Agent):
             bala=check_bala_mtf(sym)
             if bala and bala["weekly_pullback"]: out.append({"symbol":sym,"bala":bala})
         return out
-class BTSTAgent(Agent):
-    def __init__(self): super().__init__("BTST Agent")
-    def execute(self, symbols, *a, **k):
-        out=[]
-        for sym in symbols:
-            ok,av,ph,pr=check_btst_avwap(sym)
-            if ok: out.append({"symbol":sym,"avwap":av,"prev_high":ph,"cmp":pr})
-        return out
 class RiskAgent(Agent):
     def __init__(self): super().__init__("Risk Neural Agent")
     def execute(self, all_results, market, *a, **k):
@@ -477,16 +426,15 @@ class RiskAgent(Agent):
         return sorted(all_results, key=lambda x: x["final_rank"], reverse=True)
 class MessengerAgent(Agent):
     def __init__(self): super().__init__("Messenger Agent")
-    def execute(self, scan_type, market, results, btst_list, bala_list, paper_updates=None, *a, **k):
-        msg=build_msg(scan_type, market, results, btst_list, bala_list, paper_updates=paper_updates)
+    def execute(self, market, results, bala_list, paper_updates=None, *a, **k):
+        msg=build_msg(market, results, bala_list, paper_updates=paper_updates)
         send_telegram(msg)
         return {"sent":True,"len":len(msg)}
 
-def build_msg(scan_type, market, results, btst_list, bala_list, paper_updates=None):
+def build_msg(market, results, bala_list, paper_updates=None):
     now_ist=datetime.now(IST); now_str=now_ist.strftime("%d-%m %I:%M %p IST")
-    title={"MARKET_DIR":"MARKET DIRECTION - PRE OPEN","DAY_SWING":"DAY + SWING TRADING","BTST":"BTST FOR TOMORROW","PRO":"DAY OVERALL + TOMORROW DIRECTION"}.get(scan_type,"MARKET DIRECTION")
     data_src = "Upstox Live" if UPSTOX_ENABLED else "Yahoo Fallback"
-    msg=f"MASTER V20.1 - {now_str} - {title}\nData: {data_src}\n"
+    msg=f"MASTER V20.1 - {now_str} - DAY + SWING TRADING - 9:55 AM ONLY\nData: {data_src}\n"
     msg+=f"Market: {market['direction']} | Nifty:{market['nifty_cmp']:.0f} RSI:{market['nifty_rsi']:.0f} Bull:{market['bull_score']}/5\n"
     npv=market["nifty_pivot"]; bpv=market["bn_pivot"]
     msg+=f"\nNIFTY S/R:\nCMP:{market['nifty_cmp']:.0f} PP:{npv['pp']:.0f} R1:{npv['r1']:.0f} R2:{npv['r2']:.0f} S1:{npv['s1']:.0f} S2:{npv['s2']:.0f}\nPrevH:{npv['prev_high']:.0f} L:{npv['prev_low']:.0f} | R3:{npv['r3']:.0f} S3:{npv['s3']:.0f}\n"
@@ -496,84 +444,47 @@ def build_msg(scan_type, market, results, btst_list, bala_list, paper_updates=No
     elif market["nifty_cmp"]>npv["s1"] and npv["s1"]>0: zone="S1-PP Weak"
     else: zone="Below S1 Bearish"
     msg+=f"Zone: {zone}\n"
-    # PAPER UPDATES - show at top of every message if any
     if paper_updates:
         msg+=f"\n--- PAPER TRADE UPDATES (VIRTUAL) ---\n"
         for u in paper_updates:
             msg+=f"{u}\n"
         msg+=f"-----------------------------------\n"
-    if scan_type=="MARKET_DIR":
-        msg+=f"\nScan:{len(results)}/{len(NIFTY500)}\n\nPRE-OPEN PLAN:\n"
-        if market["direction"]=="BULLISH": msg+="Buy on dip near PP / S1. Avoid chasing above R1.\nTarget R1 -> R2. SL below PP.\n"
-        elif market["direction"]=="BEARISH": msg+="Avoid longs. Sell on rise near PP / R1.\nTarget S1 -> S2. SL above PP.\n"
-        else: msg+="No trade zone. Wait for breakout above R1 or breakdown below S1.\nOnly True Bala with tight SL.\n"
-        msg+="\n9:45 AM will come Day + Swing list. Wait for it."
-        return msg
-    if scan_type=="DAY_SWING":
-        tb=[x for x in results if x["true_bala"]]; htf=[x for x in results if x["htf"]]; trend=[x for x in results if x["trend"]]; hm=[x for x in results if x["hm"]]
-        msg+=f"\nScan:{len(results)}/{len(NIFTY500)} TB:{len(tb)} HTF:{len(htf)}\n\n"
-        def add(title, lst):
-            nonlocal msg
-            msg+=f"{title} Best 3\n"
-            if len(lst)==0: msg+="No stocks today\n\n"; return
-            for i,r in enumerate(lst[:3]):
-                plan = swing_gtt_plan(r['entry_low'], r['entry_high'], r['sl'], r['t1'], r['t2'])
-                msg+=f"{i+1}. {r['symbol']} CMP:{r['cmp']:.0f} R:{r['final_rank']:.0f} P:{r['prob']:.0f}% W:{r['win']:.0f}%\n   Entry:{r['entry_low']:.0f}-{r['entry_high']:.0f} SL:{r['sl']:.0f} T1:{r['t1']:.0f} T2:{r['t2']:.0f}\n"
-                msg+=f"   PAPER GTT: SL GTT {plan['sl_gtt']:.0f} (100%) | T1 GTT {plan['t1']:.0f} (50%) | T2 GTT {plan['t2']:.0f} (50%) | Trail SL->{plan['trail_sl']:.0f} after T1\n"
-            msg+="\n"
-        add("DAY - TRUE BALA", tb); add("DAY - HTF CLUSTER", htf); add("SWING - TREND", trend); add("SWING - HM", hm)
-        msg+="FINAL BEST 3 FOR TODAY - PAPER TRADE ONLY\n\n"
-        for i,r in enumerate(results[:3]):
+    tb=[x for x in results if x["true_bala"]]; htf=[x for x in results if x["htf"]]; trend=[x for x in results if x["trend"]]; hm=[x for x in results if x["hm"]]
+    msg+=f"\nScan:{len(results)}/{len(NIFTY500)} TB:{len(tb)} HTF:{len(htf)}\n\n"
+    def add(title, lst):
+        nonlocal msg
+        msg+=f"{title} Best 3\n"
+        if len(lst)==0: msg+="No stocks today\n\n"; return
+        for i,r in enumerate(lst[:3]):
             plan = swing_gtt_plan(r['entry_low'], r['entry_high'], r['sl'], r['t1'], r['t2'])
-            msg+=f"{i+1}. {r['symbol']} CMP:{r['cmp']:.0f} Entry:{r['entry_low']:.0f}-{r['entry_high']:.0f} SL:{r['sl']:.0f} T1:{r['t1']:.0f} T2:{r['t2']:.0f}\n"
-            msg+=f"   PAPER: Buy Avg {plan['entry']:.0f} | SL GTT {plan['sl_gtt']:.0f} | T1 {plan['t1']:.0f} 50% | T2 {plan['t2']:.0f} 50% | Qty {PAPER_QTY} VIRTUAL - No real order\n"
-        msg+="\nDay Trade: Use T1 only. Swing: Hold till T2, SL = 50EMA.\nPAPER ONLY: No real GTT placed in Upstox. Bot tracks SL/T1/T2 virtually in paper_trades.csv"
-        return msg
-    if scan_type=="BTST":
-        msg+=f"\nScan:{len(results)}/{len(NIFTY500)} BTST:{len(btst_list)}\n\nBTST (AVWAP>30m High) Best 3 - Buy Today, Sell Tomorrow Morning\n"
-        if len(btst_list)>0:
-            for i,r in enumerate(btst_list[:3]): msg+=f"{i+1}. {r['symbol']} CMP:{r['cmp']:.0f} AVWAP:{r['avwap']:.0f}>30mH:{r['prev_high']:.0f}\n"
-        else: msg+="0 BTST today - Market weak, No breakout. Do NOT force BTST.\n\n"
-        if len(bala_list)>0:
-            msg+="\nBALA MTF LADDER - Positional\n"
-            res_map={x["symbol"]:x for x in results}
-            for i,b in enumerate(bala_list[:3]):
-                lad=b["bala"]["ladder"]; sym=b["symbol"]; rr=res_map.get(sym,{"cmp":0,"sl":0})
-                msg+=f"{i+1}. {sym} CMP:{rr['cmp']:.0f} E1 25% @ {lad['e1']:.0f} | E2 40% @ {lad['e2']:.0f} | E3 35% @ {lad['e3']:.0f} SL:{rr['sl']:.0f}\n"
-                msg+=f"   W20:{b['bala']['w20']:.0f} MTF:{'YES' if b['bala']['mtf_ok'] else 'NO'} HTF H200>H400:{'YES' if b['bala']['htf_ok'] else 'NO'} T2 1:4:{rr.get('t2',0):.0f}\n"
-        msg+="\nBTST Rule: Buy in last 15 min, SL = Today Low. Exit tomorrow 9:30-10:00 AM.\nBot1 BTST is info only - Paper tracking for BTST is in Bot2."
-        return msg
-    msg+=f"\nTODAY OVERALL:\nNifty Closed at {market['nifty_cmp']:.0f} vs PP {npv['pp']:.0f} - {zone}\nBull Score: {market['bull_score']}/5 | RSI: {market['nifty_rsi']:.0f}\n"
-    if market["nifty_cmp"]>npv["pp"]: msg+="Today: Buyers won. Closed above PP = Positive.\n"
-    else: msg+="Today: Sellers won. Closed below PP = Negative.\n"
-    msg+=f"\nTOMORROW DIRECTION: {market['direction']}\n"
-    if market["direction"]=="BULLISH": msg+="Tomorrow: BULLISH. Plan: Buy dip near PP/S1. Levels: S1 as Support, R1 as Target.\nAvoid shorting.\n"
-    elif market["direction"]=="BEARISH": msg+="Tomorrow: BEARISH. Plan: Sell rise near PP/R1. Levels: R1 as Resistance, S1 as Target.\nAvoid longs, only HM safe.\n"
-    elif market["direction"]=="WEAK": msg+="Tomorrow: WEAK. Plan: No fresh longs. Wait for Nifty to close above 20EMA.\n"
-    else: msg+="Tomorrow: SIDEWAYS. Plan: Buy near S1, Sell near R1. No breakout trade.\n"
-    msg+=f"\nTomorrow Key Levels: R1:{npv['r1']:.0f} PP:{npv['pp']:.0f} S1:{npv['s1']:.0f}\nIf Nifty opens above R1 = Strong. If opens below S1 = Weak.\n"
-    msg+=f"\nScan:{len(results)}/{len(NIFTY500)} - Full list came at 9:45 AM, see that msg."
+            msg+=f"{i+1}. {r['symbol']} CMP:{r['cmp']:.0f} R:{r['final_rank']:.0f} P:{r['prob']:.0f}% W:{r['win']:.0f}%\n   Entry:{r['entry_low']:.0f}-{r['entry_high']:.0f} SL:{r['sl']:.0f} T1:{r['t1']:.0f} T2:{r['t2']:.0f}\n"
+            msg+=f"   PAPER GTT: SL GTT {plan['sl_gtt']:.0f} (100%) | T1 GTT {plan['t1']:.0f} (50%) | T2 GTT {plan['t2']:.0f} (50%) | Trail SL->{plan['trail_sl']:.0f} after T1\n"
+        msg+="\n"
+    add("DAY - TRUE BALA", tb); add("DAY - HTF CLUSTER", htf); add("SWING - TREND", trend); add("SWING - HM", hm)
+    msg+="FINAL BEST 3 FOR TODAY - PAPER TRADE ONLY - SWING\n\n"
+    for i,r in enumerate(results[:3]):
+        plan = swing_gtt_plan(r['entry_low'], r['entry_high'], r['sl'], r['t1'], r['t2'])
+        msg+=f"{i+1}. {r['symbol']} CMP:{r['cmp']:.0f} Entry:{r['entry_low']:.0f}-{r['entry_high']:.0f} SL:{r['sl']:.0f} T1:{r['t1']:.0f} T2:{r['t2']:.0f}\n"
+        msg+=f"   PAPER: Buy Avg {plan['entry']:.0f} | SL GTT {plan['sl_gtt']:.0f} | T1 {plan['t1']:.0f} 50% | T2 {plan['t2']:.0f} 50% | Qty {PAPER_QTY} VIRTUAL - No real order\n"
+    msg+="\nDay Trade: Use T1 only. Swing: Hold till T2, SL = 50EMA.\nPAPER ONLY: No real GTT placed in Upstox. Bot tracks SL/T1/T2 virtually in paper_trades.csv\n"
+    msg+="\nBot 1 = Finder only. For real trade with Rs 5000 risk + exact qty, follow Bot 2 at 9:45 AM."
     return msg
 
-def resolve_scan_type(now_ist):
-    raw=os.getenv("SCAN_TYPE","AUTO").strip().upper()
-    if raw in ["BTST","MARKET_DIR","DAY_SWING","PRO"]: return raw
-    if raw in ["DAY","SWING"]: return "DAY_SWING"
-    h=now_ist.hour; m=now_ist.minute
-    total = h*60+m
-    if 530 <= total < 570: return "MARKET_DIR"
-    if 570 <= total < 890: return "DAY_SWING"
-    if 890 <= total < 950: return "BTST"
-    if total >= 950: return "PRO"
-    return "MARKET_DIR"
-
 def main():
-    now_ist=datetime.now(IST); scan_type=resolve_scan_type(now_ist)
-    print(f"V20.1 Start {now_ist.strftime('%d-%m-%Y %H:%M IST')} Scan:{scan_type} Chats:{CHAT_IDS}")
-    if now_ist.weekday()>4:
-        print("Weekend IST - No Trade"); return
+    now_ist=datetime.now(IST)
+    # ===== TIME GUARD - ONLY 9:55 AM IST =====
+    # GitHub cron sometimes runs late (5 PM / 6 PM). Block all runs outside 9:50-10:15 AM.
+    # To force a manual test, set env FORCE_RUN=1 in workflow_dispatch, or run between 9:50-10:15.
+    force = os.getenv("FORCE_RUN","").strip() == "1"
+    if not force:
+        if now_ist.weekday()>4:
+            print("Weekend IST - No Trade"); return
+        total = now_ist.hour*60 + now_ist.minute
+        if not (590 <= total <= 615):
+            print(f"TIME GUARD: Now {now_ist.strftime('%d-%m-%Y %H:%M IST')} - Not 9:55 AM window (9:50-10:15). Skipping. No Telegram, no Paper.")
+            return
+    print(f"V20.1 Start {now_ist.strftime('%d-%m-%Y %H:%M IST')} Scan:DAY_SWING Chats:{CHAT_IDS} Force:{force}")
     try:
-        # PAPER CHECK FIRST - check yesterday OPEN trades before new scan
         paper_updates = []
         try:
             paper_updates = check_paper_trades()
@@ -582,36 +493,25 @@ def main():
         except Exception as e:
             print(f"Paper check skip {e}")
         market=MarketAgent().run()
-        if scan_type=="MARKET_DIR":
-            MessengerAgent().run(scan_type, market, [], [], [], paper_updates=paper_updates)
-            print("V20.1 Done - Market Only"); return
         data_dict=DataAgent().run(NIFTY500)
         with ThreadPoolExecutor(max_workers=3) as ex:
-            if scan_type=="BTST":
-                f_btst=ex.submit(BTSTAgent().run, list(data_dict.keys()))
-                f_weekly=ex.submit(WeeklyAgent().run, list(data_dict.keys()))
-                f_tb=ex.submit(TrueBalaAgent().run, data_dict, market)
-                tb_list=f_tb.result(); btst_list=f_btst.result(); bala_list=f_weekly.result()
-            else:
-                f_tb=ex.submit(TrueBalaAgent().run, data_dict, market)
-                f_btst=ex.submit(BTSTAgent().run, list(data_dict.keys()))
-                f_weekly=ex.submit(WeeklyAgent().run, list(data_dict.keys()))
-                tb_list=f_tb.result(); btst_list=f_btst.result(); bala_list=f_weekly.result()
+            f_tb=ex.submit(TrueBalaAgent().run, data_dict, market)
+            f_weekly=ex.submit(WeeklyAgent().run, list(data_dict.keys()))
+            tb_list=f_tb.result(); bala_list=f_weekly.result()
         bala_map={b["symbol"]:b["bala"] for b in bala_list}
         for r in tb_list:
             if r["symbol"] in bala_map:
                 lad=bala_map[r["symbol"]]["ladder"]
                 if lad["e1"]>0: r["sl"]=round(min(lad["e1"]*0.995, r["ema50"]),2)
         final_list=RiskAgent().run(tb_list, market)
-        # PAPER RECORD - Only for DAY_SWING FINAL BEST 3
-        if scan_type=="DAY_SWING" and len(final_list)>0:
+        if len(final_list)>0:
             for r in final_list[:3]:
                 try:
                     plan = swing_gtt_plan(r["entry_low"], r["entry_high"], r["sl"], r["t1"], r["t2"])
                     record_paper_trade("BOT1_SWING", r["symbol"], plan, qty=PAPER_QTY)
                 except Exception as e:
                     print(f"Paper record skip {r.get('symbol')} {e}")
-        MessengerAgent().run(scan_type, market, final_list, btst_list, bala_list, paper_updates=paper_updates)
+        MessengerAgent().run(market, final_list, bala_list, paper_updates=paper_updates)
         print("V20.1 All Agents Done")
     except Exception as e:
         print(f"V20.1 CRASH {e}"); traceback.print_exc()
