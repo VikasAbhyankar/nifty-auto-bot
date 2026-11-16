@@ -1,14 +1,14 @@
 name: MASTER V20.1 - Upstox Live - IST
 on:
   schedule:
-    - cron: '25 4 * * 1-5'   # 9:55 AM IST - MASTER V20.1 MORNING SCAN
+    - cron: '25 4 * * 1-5'   # 9:55 AM IST ONLY - Do not add more crons
   workflow_dispatch:
 permissions:
   contents: read
 jobs:
   trade:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 35
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -16,14 +16,12 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-      - name: Check Files
-        run: ls -R
       - name: Install deps
         run: pip install --quiet yfinance pandas numpy requests pytz
-      - name: Run V20.1 - IST + Upstox
+      - name: Run V20.1 - 9:55 AM ONLY
+        run: python augmented_ai_screener.py
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           UPSTOX_ACCESS_TOKEN: ${{ secrets.UPSTOX_ACCESS_TOKEN }}
           UPSTOX_TOKEN_EXPIRY: ${{ secrets.UPSTOX_TOKEN_EXPIRY }}
-        run: python augmented_ai_screener.py
