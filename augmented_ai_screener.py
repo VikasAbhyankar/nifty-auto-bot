@@ -1,9 +1,10 @@
-# MASTER V20.3 - FINAL CLEAN - BOT 1 = FINDER ONLY
-# Job: Find strongest 3 Swing stocks - RUNS ANYTIME, ANY DAY, ANY NUMBER OF TIMES (Manual or 9:55 AM Cron)
+# MASTER V20.4 - FINAL CLEAN - BOT 1 = FINDER ONLY
+# Job: Find strongest 3 Swing stocks - EARLY ENTRY + SMALL SL + HIGH PROB
+# RUNS ANYTIME - No Time Guard - Manual or 9:55 AM Cron
 # Data: Upstox Live (Primary) + Yahoo Fallback | Telegram: You + Prashant + Nishant
 # Agents: Market, Data, TrueBala, WeeklyMTF, Risk, Messenger + BALA AVWP
 # PAPER TRADING ONLY - No live order, No real GTT. Virtual SL/T1/T2 tracked in paper_trades.csv
-# CHANGELOG V20.3: NO TIME GUARD (GitHub Cron late hota hai, manual run primary), + Bala AVWP Prob +12, Dedup NIFTY500
+# CHANGELOG V20.4: Early Entry (AVWP/CMP-0.5%), Small SL Max 0.8% (AVWP/ATR, NOT EMA50), T1=1.5R T2=2.5R, Distinct Lists (No Repeat), Prob Boost Bala +12 + Tight SL +5
 import os, sys, time, math, json, traceback, csv
 from datetime import datetime, timedelta, timezone
 import numpy as np
@@ -37,7 +38,7 @@ for fid in ["5239892901", "9000971028"]:
     if fid not in _raw_ids:
         _raw_ids.append(fid)
 CHAT_IDS = _raw_ids
-print(f"V20.3 Telegram Targets: {CHAT_IDS} | Upstox Enabled: {UPSTOX_ENABLED}")
+print(f"V20.4 Telegram Targets: {CHAT_IDS} | Upstox Enabled: {UPSTOX_ENABLED}")
 
 # ===== PAPER TRADING - BOT1 SWING ONLY =====
 PAPER_FILE = "paper_trades.csv"
@@ -219,7 +220,7 @@ def get_upstox_candles(symbol, interval="day", days_back=365):
         print(f"Upstox candle err {symbol} {e}")
         return None
 
-# ===== NIFTY500 - DEDUPED in V20.3 =====
+# ===== NIFTY500 - DEDUPED =====
 _NIFTY500_RAW = ["RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","TATAMOTORS","ETERNAL","CDSL","PNB","KALYANKJIL","TITAN","ITC","LT","AXISBANK","KOTAKBANK","BAJFINANCE","HINDUNILVR","MARUTI","TATASTEEL","JSWSTEEL","ULTRACEMCO","ADANIENT","ADANIPORTS","POWERGRID","NTPC","ONGC","COALINDIA","BPCL","IOC","HDFCLIFE","SBILIFE","ICICIPRULI","BAJAJFINSV","M&M","EICHERMOT","HEROMOTOCO","BAJAJ-AUTO","APOLLOHOSP","DIVISLAB","SUNPHARMA","CIPLA","DRREDDY","GRASIM","HINDALCO","VEDL","TATAPOWER","ADANIGREEN","ADANIPOWER","IRFC","RVNL","HAL","BEL","BDL","MAZAGON","COCHINSHIP","BHEL","NHPC","SJVN","PFC","RECLTD","HUDCO","NBCC","IRCON","RAILTEL","TITAGARH","JUPITERWAGONS","GENSOL","SUZLON","IREDA","TATATECH","TATAELXSI","KPITTECH","PERSISTENT","COFORGE","LTIM","MPHASIS","TECHM","WIPRO","HCLTECH","ZOMATO","PAYTM","NYKAA","POLICYBZR","DELHIVERY","DMART","TRENT","VBL","NESTLEIND","BRITANNIA","DABUR","MARICO","GODREJCP","COLPAL","TATACONSUM","HATSUN","PAGEIND","RELAXO","CAMPUS","BATAINDIA","METROBRANDS","KAYNES","DIXON","AMBER","PGEL","SYRMA","CROMPTON","HAVELLS","POLYCAB","KEI","FINOLEX","SUPREMEIND","ASTRAL","APLAPOLLO","JINDALSTEL","SAIL","NMDC","NATIONALUM","HINDCOPPER","MOIL","GMDCLTD","MANGLMCEM","RAMCOCEM","SHREECEM","ACC","AMBUJACEM","DALMIABHA","JKCEMENT","STAR","ORIENTCEM","HEIDELBERG","PRISMJOHN","SAGAR","INDIACEM","CERA","KAJARIA","SOMANY","HSIL","RAJESHEXPO","THANGAMAYIL","KALYAN","PNBGILTS","PNBHOUSING","CANFIN","LICHSGFIN","GICHSGFIN","REPCOHOME","AAVAS","HOMEFIRST","APTUS","MANAPPURAM","MUTHOOTFIN","IIFL","CHOLAFIN","SHRIRAMFIN","MAHABANK","CENTRALBK","UCOBANK","BANKOFMAHA","INDIANB","IOB","PSB","J&KBANK","KARURVYSYA","FEDERALBNK","RBLBANK","IDFCFIRSTB","YESBANK","BANDHANBNK","CSBBANK","DCBBANK","CUB","TMB","KARNATAKA","SOUTHBANK","INDUSINDBK","AUBANK","EQUITASBNK","UJJIVANSFB","CAPITALSFB","ESAFSFB","JANA","SURYO","SPANDANA","CREDITACC","ARMAN","FIVE-STAR","SATIN","UJJIVAN","MFIN","MASFIN","PAISALO","CAPRIGLOBAL","PIRAMAL","JMFINANCIL","MOTILALOFS","ANGELONE","BSE","MCX","CDSL","NSDL","CAMS","KFINTECH","ANANDRATHI","NUVAMA","360ONE","IIFLSEC","GEOJIT","SMC","SHAREINDIA","EMKAY","MONARCH","PRUDENT","DPABHUSHAN","MANINFRA","OBEROIRLTY","PRESTIGE","BRIGADE","SOBHA","GODREJPROP","DLF","PHOENIXLTD","MACPOWER","ASHIANA","SUNTERRA","SHRIRAMPROP","PURAVANKARA","ARVIND","VARDHMAN","TRIDENT","WELSPUNLIV","INDOCOUNT","GOKEX","RAYMOND","KPRMILL","PAGE","WELCORP","JINDALSAW","RATNAMANI","MAHSEAMLES","APL","JTLIND","MANAKSIA","JINDALPOLY","HIMATSEIDE","BANSWRAS","RSWM","DONEAR","ALOKINDS","FILATEX","VTL","SUTLEJTEX","NITINSPIN","GHCL","GHCLTEXTIL","VARDHMANACR","INDORAMA","JBF","GARDENREACH","GRSE","PARADEEP","FACT","RCF","GSFC","GNFC","DEEPAKFERT","ZUARI","MANGCHE","CHAMBLFERT","NFL","KRIBHCO","COROMANDEL","UPL","PIIND","SUMICHEM","ATUL","AARTIIND","DEEPAKNTR","FINEORG","ALKYLAMINE","BALAMINES","VINATIORGA","CLEAN","ROSSARI","NEOGEN","ANURAS","GOPAL","LAXMI","TATACHEM","DCMSHRIRAM","TATAGU","IGL","MGL","GUJGASLTD","PETRONET","GAIL","OIL","MRPL","CHENNPETRO","NRL","BALMERLAWRIE","GULFOILLUB","CASTROLIND","SAVITA","APARINDS","TIDEWATER","PANAMAPET","GANDHARTU","MORGANITE","CARBORUNIV","GRINDWELL","WENDT","MMTC","STCINDIA","KIOCL","FERRO","IMFA","SHAKTI","JSL","JINDALSTEL"]
 NIFTY500 = list(dict.fromkeys(_NIFTY500_RAW))
 
@@ -310,6 +311,17 @@ def calc_rsi(series, period=14):
     except:
         return pd.Series([50] * len(series), index=series.index)
 
+def calc_atr(df, n=14):
+    try:
+        h = df["High"]
+        l = df["Low"]
+        c = df["Close"]
+        pc = c.shift(1)
+        tr = pd.concat([h - l, (h - pc).abs(), (l - pc).abs()], axis=1).max(axis=1)
+        return tr.ewm(alpha=1 / n, adjust=False).mean()
+    except:
+        return pd.Series([0] * len(df), index=df.index)
+
 def calc_pivot(df):
     try:
         prev = df.iloc[-2]
@@ -327,7 +339,41 @@ def calc_pivot(df):
     except:
         return {"pp": 0, "r1": 0, "r2": 0, "s1": 0, "s2": 0, "r3": 0, "s3": 0, "prev_high": 0, "prev_low": 0, "prev_close": 0}
 
-# ===== BALA AVWP - V20.3 - INLINE, NO EXTERNAL FILE =====
+# ===== V20.4 CORE: EARLY ENTRY + SMALL SL + HIGH PROB =====
+def make_early_entry_small_sl(cmp_, avwp, atr, swing_low, ema20):
+    # Early Entry: AVWP ke paas ya CMP-0.5% se CMP tak, bada EMA20-CMP range nahi
+    if avwp and avwp > 0:
+        entry_low = round(min(avwp, cmp_) * 0.998, 2)
+        entry_high = round(cmp_, 2)
+    else:
+        entry_low = round(max(ema20, cmp_ * 0.995), 2)
+        entry_high = round(cmp_, 2)
+    if entry_low >= entry_high:
+        entry_low = round(cmp_ * 0.995, 2)
+    # Small SL: MAX 0.8% risk, MIN of AVWP SL / ATR SL / CMP-0.8%
+    # Purana EMA50 SL (12% door) hata diya - wahi T1 ko 1055 bana raha tha
+    candidates = []
+    if swing_low and swing_low > 0:
+        candidates.append(swing_low * 0.996)
+    if atr and atr > 0:
+        candidates.append(cmp_ - atr * 1.0)
+    candidates.append(cmp_ * 0.992)
+    # SL ko CMP se kam se kam 0.3% door rakho, nahi toh wick me SL kat jayega
+    sl = round(min(candidates), 2)
+    if sl > cmp_ * 0.997:
+        sl = round(cmp_ * 0.997, 2)
+    if sl % 1 == 0:
+        sl -= 0.30
+    risk = entry_high - sl
+    if risk <= 0:
+        risk = round(cmp_ * 0.005, 2)
+        sl = round(cmp_ - risk, 2)
+    t1 = round(entry_high + risk * 1.5, 2)
+    t2 = round(entry_high + risk * 2.5, 2)
+    sl_pct = round(risk / entry_high * 100, 2)
+    return {"entry_low": entry_low, "entry_high": entry_high, "sl": sl, "t1": t1, "t2": t2, "risk": round(risk, 2), "sl_pct": sl_pct}
+
+# ===== BALA AVWP - V20.4 =====
 def _get_swing_lows(df, left=5, right=5):
     lows = []
     try:
@@ -367,6 +413,7 @@ def bala_avwp_swing(symbol, df_daily):
         open_p = safe_float(df["Open"].iloc[-1])
         rsi_d = safe_float(calc_rsi(df["Close"]).iloc[-1])
         vol_ema20 = safe_float(df["Volume"].ewm(span=20, adjust=False).mean().iloc[-1])
+        # V20.4: Overheated stocks ko bahar - RSI 70+ pe chase nahi karna, Nifty RSI 91 wale din bhi
         if not (ema20 > ema50 and close > ema200 and low <= ema20 * 1.03 and close >= ema20 * 0.97 and close <= ema20 * 1.04 and close > open_p and close > 100 and 42 <= rsi_d <= 63 and vol_ema20 > 300000):
             return None
         mo = get_data_safe(symbol, period="5y", interval="1mo")
@@ -442,10 +489,12 @@ def get_market_direction():
             direction = "WEAK"
         else:
             direction = "SIDEWAYS"
-        return {"direction": direction, "nifty_cmp": n_cmp, "bn_cmp": bn_cmp, "nifty_rsi": n_rsi, "bull_score": bull, "nifty_pivot": calc_pivot(nifty) if nifty is not None else calc_pivot(pd.DataFrame()), "bn_pivot": calc_pivot(bn) if bn is not None else calc_pivot(pd.DataFrame())}
+        # Overheated warning - Nifty RSI 90+ pe chase mat karo, pullback ka wait karo
+        overheated = n_rsi > 75
+        return {"direction": direction, "nifty_cmp": n_cmp, "bn_cmp": bn_cmp, "nifty_rsi": n_rsi, "bull_score": bull, "overheated": overheated, "nifty_pivot": calc_pivot(nifty) if nifty is not None else calc_pivot(pd.DataFrame()), "bn_pivot": calc_pivot(bn) if bn is not None else calc_pivot(pd.DataFrame())}
     except Exception as e:
         print(f"Market err {e}")
-        return {"direction": "SIDEWAYS", "nifty_cmp": 0, "bn_cmp": 0, "nifty_rsi": 50, "bull_score": 3, "nifty_pivot": calc_pivot(pd.DataFrame()), "bn_pivot": calc_pivot(pd.DataFrame())}
+        return {"direction": "SIDEWAYS", "nifty_cmp": 0, "bn_cmp": 0, "nifty_rsi": 50, "bull_score": 3, "overheated": False, "nifty_pivot": calc_pivot(pd.DataFrame()), "bn_pivot": calc_pivot(pd.DataFrame())}
 
 def analyze_from_df(symbol, df):
     try:
@@ -462,10 +511,12 @@ def analyze_from_df(symbol, df):
         e50 = safe_float(df["E50"].iloc[-1])
         e200 = safe_float(df["E200"].iloc[-1])
         rsi = safe_float(calc_rsi(df["Close"]).iloc[-1])
+        atr = safe_float(calc_atr(df).iloc[-1])
         vol_mean = safe_float(df["Volume"].iloc[-21:-1].mean())
         vol_ratio = safe_float(df["Volume"].iloc[-1] / vol_mean) if vol_mean > 0 else 0
         hm = cmp_ > e200
-        true_bala = (cmp_ > e8 > e20 > e50) and hm and rsi > 55 and vol_ratio > 0.4
+        # V20.4: High Prob filter - RSI 70+ overheated ko True Bala se bahar
+        true_bala = (cmp_ > e8 > e20 > e50) and hm and 55 <= rsi <= 68 and vol_ratio > 0.4
         trend = (cmp_ > e8 > e20 > e50)
         htf = trend and hm
         score = 0
@@ -473,25 +524,33 @@ def analyze_from_df(symbol, df):
             score += 30
         if hm:
             score += 15
-        if rsi > 60:
+        if 60 <= rsi <= 68:
             score += 15
-        elif rsi > 55:
+        elif 55 <= rsi < 60:
             score += 10
+        # Overheated penalty - chase karne wale ko neeche dhakelo
+        if rsi > 70:
+            score -= 10
         if vol_ratio > 1.0:
             score += 15
         elif vol_ratio > 0.6:
             score += 8
         if cmp_ > e200:
             score += 10
-        sl = round(e50 * 0.99, 2) if e50 > 0 else round(cmp_ * 0.97, 2)
-        risk = cmp_ - sl
-        t1 = round(cmp_ + risk * 2, 2) if risk > 0 else cmp_
-        t2 = round(cmp_ + risk * 4, 2) if risk > 0 else cmp_
-        entry_low = round(e20, 2)
-        entry_high = round(cmp_, 2)
+        # V20.4: Early Entry + Small SL - EMA50 SL hata diya
+        plan = make_early_entry_small_sl(cmp_, 0, atr, 0, e20)
+        sl = plan["sl"]
+        t1 = plan["t1"]
+        t2 = plan["t2"]
+        entry_low = plan["entry_low"]
+        entry_high = plan["entry_high"]
         prob = min(95, 55 + score * 0.35)
         win = min(92, 50 + score * 0.3)
-        return {"symbol": symbol, "cmp": cmp_, "ema8": e8, "ema20": e20, "ema50": e50, "ema200": e200, "rsi": rsi, "vol_ratio": vol_ratio, "hm": hm, "true_bala": true_bala, "trend": trend, "htf": htf, "score": score, "final_rank": score, "prob": prob, "win": win, "sl": sl, "t1": t1, "t2": t2, "entry_low": entry_low, "entry_high": entry_high, "bala_avwp": False, "bala_data": None}
+        # Tight SL bonus - SL chhota hai toh R:R accha hai, prob badhao
+        if plan["sl_pct"] <= 0.8:
+            prob = min(95, prob + 5)
+            win = min(92, win + 3)
+        return {"symbol": symbol, "cmp": cmp_, "ema8": e8, "ema20": e20, "ema50": e50, "ema200": e200, "rsi": rsi, "atr": atr, "vol_ratio": vol_ratio, "hm": hm, "true_bala": true_bala, "trend": trend, "htf": htf, "score": score, "final_rank": score, "prob": prob, "win": win, "sl": sl, "t1": t1, "t2": t2, "entry_low": entry_low, "entry_high": entry_high, "sl_pct": plan["sl_pct"], "bala_avwp": False, "bala_data": None}
     except Exception as e:
         print(f"Analyze {symbol} err {e}")
         return None
@@ -577,6 +636,9 @@ def neural_score(score, market, r):
         base += 10
     elif market["direction"] == "BEARISH":
         base -= 15
+    # Overheated market me sabka score thoda kam - chase se bachao
+    if market.get("overheated"):
+        base -= 5
     return round(base, 1)
 
 def send_telegram(msg):
@@ -660,9 +722,8 @@ class RiskAgent(Agent):
     def execute(self, all_results, market, *a, **k):
         for r in all_results:
             r["final_rank"] = neural_score(r["score"], market, r)
-            risk = r["cmp"] - r["sl"]
-            if risk > 0:
-                r["t2"] = round(r["cmp"] + risk * 4, 2)
+            # V20.4: T1/T2 already 1.5R/2.5R in analyze, yahan dobara 4R mat karo
+            pass
         return sorted(all_results, key=lambda x: x["final_rank"], reverse=True)
 
 class MessengerAgent(Agent):
@@ -677,8 +738,10 @@ def build_msg(market, results, bala_list, paper_updates=None):
     now_ist = datetime.now(IST)
     now_str = now_ist.strftime("%d-%m %I:%M %p IST")
     data_src = "Upstox Live" if UPSTOX_ENABLED else "Yahoo Fallback"
-    msg = f"MASTER V20.3 - {now_str} - DAY + SWING TRADING\nData: {data_src}\n"
+    msg = f"MASTER V20.4 - {now_str} - DAY + SWING TRADING\nData: {data_src}\n"
     msg += f"Market: {market['direction']} | Nifty:{market['nifty_cmp']:.0f} RSI:{market['nifty_rsi']:.0f} Bull:{market['bull_score']}/5\n"
+    if market.get("overheated"):
+        msg += "⚠️ NIFTY OVERHEATED (RSI>75) - Chase mat karo, Pullback / AVWP Entry ka wait karo\n"
     npv = market["nifty_pivot"]
     bpv = market["bn_pivot"]
     msg += f"\nNIFTY S/R:\nCMP:{market['nifty_cmp']:.0f} PP:{npv['pp']:.0f} R1:{npv['r1']:.0f} R2:{npv['r2']:.0f} S1:{npv['s1']:.0f} S2:{npv['s2']:.0f}\nPrevH:{npv['prev_high']:.0f} L:{npv['prev_low']:.0f} | R3:{npv['r3']:.0f} S3:{npv['s3']:.0f}\n"
@@ -697,22 +760,38 @@ def build_msg(market, results, bala_list, paper_updates=None):
         for u in paper_updates:
             msg += f"{u}\n"
         msg += "-----------------------------------\n"
-    tb = [x for x in results if x["true_bala"]]
-    htf = [x for x in results if x["htf"]]
-    trend = [x for x in results if x["trend"]]
-    hm = [x for x in results if x["hm"]]
-    bala_avwp_list = [x for x in results if x.get("bala_avwp")]
-    msg += f"\nScan:{len(results)}/{len(NIFTY500)} TB:{len(tb)} HTF:{len(htf)} BALA_AVWP:{len(bala_avwp_list)}\n\n"
+    # V20.4 DISTINCT LISTS - Ek stock ek hi section me, dobara nahi
+    used = set()
+    def pick(lst, n=3):
+        picked = []
+        for r in lst:
+            if r["symbol"] not in used:
+                picked.append(r)
+                used.add(r["symbol"])
+                if len(picked) >= n:
+                    break
+        return picked
+    tb_all = [x for x in results if x["true_bala"]]
+    htf_all = [x for x in results if x["htf"]]
+    trend_all = [x for x in results if x["trend"]]
+    hm_all = [x for x in results if x["hm"]]
+    bala_all = [x for x in results if x.get("bala_avwp")]
+    tb = pick(tb_all, 3)
+    htf = pick(htf_all, 3)
+    trend = pick(trend_all, 3)
+    hm = pick(hm_all, 3)
+    bala_pick = pick(bala_all, 3)
+    msg += f"\nScan:{len(results)}/{len(NIFTY500)} TB:{len(tb_all)} HTF:{len(htf_all)} BALA_AVWP:{len(bala_all)} | Distinct Lists - No Repeat\n\n"
     def add(title, lst):
         nonlocal msg
-        msg += f"{title} Best 3\n"
+        msg += f"{title} Best {len(lst) if lst else 3}\n"
         if len(lst) == 0:
-            msg += "No stocks today\n\n"
+            msg += "No stocks today - Filter strict hai, chase nahi karna\n\n"
             return
         for i, r in enumerate(lst[:3]):
             plan = swing_gtt_plan(r['entry_low'], r['entry_high'], r['sl'], r['t1'], r['t2'])
             tag = " 🟢 BALA AVWP" if r.get("bala_avwp") else ""
-            msg += f"{i+1}. {r['symbol']} CMP:{r['cmp']:.0f} R:{r['final_rank']:.0f} P:{r['prob']:.0f}% W:{r['win']:.0f}%{tag}\n   Entry:{r['entry_low']:.0f}-{r['entry_high']:.0f} SL:{r['sl']:.0f} T1:{r['t1']:.0f} T2:{r['t2']:.0f}\n"
+            msg += f"{i+1}. {r['symbol']} CMP:{r['cmp']:.0f} R:{r['final_rank']:.0f} P:{r['prob']:.0f}% W:{r['win']:.0f}%{tag}\n   Entry:{r['entry_low']:.0f}-{r['entry_high']:.0f} (Early) SL:{r['sl']:.0f} ({r.get('sl_pct', 0):.1f}%) T1:{r['t1']:.0f} T2:{r['t2']:.0f}\n"
             if r.get("bala_data"):
                 bd = r["bala_data"]
                 msg += f"   AVWP:{bd['avwp']:.0f} SL_AVWP:{bd['sl_avwp']:.0f} RSI D:{bd['rsi_d']:.0f} M:{bd['rsi_m']:.0f} Early Entry\n"
@@ -722,23 +801,22 @@ def build_msg(market, results, bala_list, paper_updates=None):
     add("DAY - HTF CLUSTER", htf)
     add("SWING - TREND", trend)
     add("SWING - HM", hm)
-    if bala_avwp_list:
-        add("SWING - BALA AVWP EARLY ENTRY", bala_avwp_list)
+    if bala_pick:
+        add("SWING - BALA AVWP EARLY ENTRY", bala_pick)
     msg += "FINAL BEST 3 FOR TODAY - PAPER TRADE ONLY - SWING\n\n"
     for i, r in enumerate(results[:3]):
         plan = swing_gtt_plan(r["entry_low"], r["entry_high"], r["sl"], r["t1"], r["t2"])
         tag = " 🟢 BALA AVWP" if r.get("bala_avwp") else ""
-        msg += f"{i+1}. {r['symbol']}{tag} CMP:{r['cmp']:.0f} Entry:{r['entry_low']:.0f}-{r['entry_high']:.0f} SL:{r['sl']:.0f} T1:{r['t1']:.0f} T2:{r['t2']:.0f}\n"
-        msg += f"   PAPER: Buy Avg {plan['entry']:.0f} | SL GTT {plan['sl_gtt']:.0f} | T1 {plan['t1']:.0f} 50% | T2 {plan['t2']:.0f} 50% | Qty {PAPER_QTY} VIRTUAL - No real order\n"
-    msg += "\nDay Trade: Use T1 only. Swing: Hold till T2, SL = 50EMA.\nPAPER ONLY: No real GTT placed in Upstox. Bot tracks SL/T1/T2 virtually in paper_trades.csv\n"
+        msg += f"{i+1}. {r['symbol']}{tag} CMP:{r['cmp']:.0f} Entry:{r['entry_low']:.0f}-{r['entry_high']:.0f} SL:{r['sl']:.0f} ({r.get('sl_pct', 0):.1f}%) T1:{r['t1']:.0f} T2:{r['t2']:.0f}\n"
+        msg += f"   PAPER: Buy Avg {plan['entry']:.0f} | SL GTT {plan['sl_gtt']:.0f} | T1 {plan['t1']:.0f} 50% | T2 {plan['t2']:.0f} 50% | Qty {PAPER_QTY} VIRTUAL - No real order | Risk/Trade: Rs {abs(plan['entry']-plan['sl_gtt'])*PAPER_QTY:.0f}\n"
+    msg += "\nRule: Entry AVWP ke paas hi lo. SL max 0.8% hai. T1 pe 50% book, SL to Entry. Day Trade: Use T1 only. Swing: Hold till T2.\nPAPER ONLY: No real GTT placed in Upstox. Bot tracks SL/T1/T2 virtually in paper_trades.csv\n"
     msg += "\nBot 1 = Finder only. For real trade with Rs 5000 risk + exact qty, follow Bot 2 at 9:45 AM."
     return msg
 
 def main():
     now_ist = datetime.now(IST)
-    # V20.3 - NO TIME GUARD - Runs anytime, any day, any number of times
-    # GitHub Cron may be late, so manual run is primary. No weekend / time check.
-    print(f"V20.3 Start {now_ist.strftime('%d-%m-%Y %H:%M %A IST')} Scan:DAY_SWING Chats:{CHAT_IDS}")
+    # V20.4 - NO TIME GUARD - Runs anytime, any day, any number of times
+    print(f"V20.4 Start {now_ist.strftime('%d-%m-%Y %H:%M %A IST')} Scan:DAY_SWING Chats:{CHAT_IDS}")
     try:
         paper_updates = []
         try:
@@ -754,13 +832,9 @@ def main():
             f_weekly = ex.submit(WeeklyAgent().run, list(data_dict.keys()))
             tb_list = f_tb.result()
             bala_list = f_weekly.result()
-        bala_map = {b["symbol"]: b["bala"] for b in bala_list}
-        for r in tb_list:
-            if r["symbol"] in bala_map:
-                lad = bala_map[r["symbol"]]["ladder"]
-                if lad["e1"] > 0:
-                    r["sl"] = round(min(lad["e1"] * 0.995, r["ema50"]), 2)
-        print("V20.3 Bala AVWP check Top 30...")
+        # V20.4: Ladder SL override HATA DIYA - wahi bada SL bana raha tha, ab Small SL hi rahega
+        # Weekly pullback sirf score ke liye use hoga, SL ke liye nahi
+        print("V20.4 Bala AVWP check Top 30...")
         for r in tb_list[:30]:
             try:
                 df_d = data_dict.get(r["symbol"])
@@ -771,14 +845,15 @@ def main():
                     r["score"] += 12
                     r["prob"] = min(95, r["prob"] + 12)
                     r["win"] = min(92, r["win"] + 5)
-                    bala_sl = bd["sl_avwp"]
-                    if bala_sl < r["cmp"] and bala_sl > r["cmp"] * 0.97:
-                        r["sl"] = round(min(r["sl"], bala_sl), 2)
-                    risk = r["cmp"] - r["sl"]
-                    if risk > 0:
-                        r["t1"] = round(r["cmp"] + risk * 2, 2)
-                        r["t2"] = round(r["cmp"] + risk * 4, 2)
-                    print(f"  BALA AVWP PASS {r['symbol']} AVWP {bd['avwp']} SL {bd['sl_avwp']}")
+                    # Early Entry + Small SL recompute with AVWP
+                    plan = make_early_entry_small_sl(r["cmp"], bd["avwp"], r.get("atr", 0), bd["swing_low"], r["ema20"])
+                    r["entry_low"] = plan["entry_low"]
+                    r["entry_high"] = plan["entry_high"]
+                    r["sl"] = plan["sl"]
+                    r["t1"] = plan["t1"]
+                    r["t2"] = plan["t2"]
+                    r["sl_pct"] = plan["sl_pct"]
+                    print(f"  BALA AVWP PASS {r['symbol']} AVWP {bd['avwp']} SL {bd['sl_avwp']} Entry {plan['entry_low']}-{plan['entry_high']}")
             except Exception as e:
                 print(f"Bala AVWP skip {r.get('symbol')} {e}")
         final_list = RiskAgent().run(tb_list, market)
@@ -794,12 +869,12 @@ def main():
                 except Exception as e:
                     print(f"Paper record skip {r.get('symbol')} {e}")
         MessengerAgent().run(market, final_list, bala_list, paper_updates=paper_updates)
-        print("V20.3 All Agents Done")
+        print("V20.4 All Agents Done")
     except Exception as e:
-        print(f"V20.3 CRASH {e}")
+        print(f"V20.4 CRASH {e}")
         traceback.print_exc()
         try:
-            send_telegram(f"MASTER V20.3 CRASHED but handled: {e} Time: {now_ist}")
+            send_telegram(f"MASTER V20.4 CRASHED but handled: {e} Time: {now_ist}")
         except:
             pass
 
