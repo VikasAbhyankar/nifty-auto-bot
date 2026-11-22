@@ -1,9 +1,9 @@
-# MASTER V20.1 - FINAL CLEAN - BOT 1 = FINDER ONLY
-# Job: Find strongest 3 Swing stocks - RUNS ANYTIME (Manual or 9:55 AM Cron)
+# MASTER V20.3 - FINAL CLEAN - BOT 1 = FINDER ONLY
+# Job: Find strongest 3 Swing stocks - RUNS ANYTIME, ANY DAY, ANY NUMBER OF TIMES (Manual or 9:55 AM Cron)
 # Data: Upstox Live (Primary) + Yahoo Fallback | Telegram: You + Prashant + Nishant
-# Agents: Market, Data, TrueBala, WeeklyMTF, Risk, Messenger
+# Agents: Market, Data, TrueBala, WeeklyMTF, Risk, Messenger + BALA AVWP
 # PAPER TRADING ONLY - No live order, No real GTT. Virtual SL/T1/T2 tracked in paper_trades.csv
-# TIME GUARD REMOVED - Runs anytime, no 9:50-10:15 check, no weekend check
+# CHANGELOG V20.3: NO TIME GUARD (GitHub Cron late hota hai, manual run primary), + Bala AVWP Prob +12, Dedup NIFTY500
 import os, sys, time, math, json, traceback, csv
 from datetime import datetime, timedelta, timezone
 import numpy as np
@@ -37,7 +37,7 @@ for fid in ["5239892901", "9000971028"]:
     if fid not in _raw_ids:
         _raw_ids.append(fid)
 CHAT_IDS = _raw_ids
-print(f"V20.1 Telegram Targets: {CHAT_IDS} | Upstox Enabled: {UPSTOX_ENABLED}")
+print(f"V20.3 Telegram Targets: {CHAT_IDS} | Upstox Enabled: {UPSTOX_ENABLED}")
 
 # ===== PAPER TRADING - BOT1 SWING ONLY =====
 PAPER_FILE = "paper_trades.csv"
@@ -47,22 +47,10 @@ def swing_gtt_plan(entry_low, entry_high, sl_bot, t1_bot, t2_bot):
     try:
         sl_gtt = round(float(sl_bot) * 0.995)
         entry_avg = round((float(entry_low) + float(entry_high)) / 2)
-        return {
-            "entry": entry_avg,
-            "sl_gtt": sl_gtt,
-            "t1": round(float(t1_bot)),
-            "t2": round(float(t2_bot)),
-            "trail_sl": entry_avg
-        }
+        return {"entry": entry_avg, "sl_gtt": sl_gtt, "t1": round(float(t1_bot)), "t2": round(float(t2_bot)), "trail_sl": entry_avg}
     except Exception as e:
         print(f"swing_gtt_plan err {e}")
-        return {
-            "entry": round(float(entry_low)),
-            "sl_gtt": round(float(sl_bot)),
-            "t1": round(float(t1_bot)),
-            "t2": round(float(t2_bot)),
-            "trail_sl": round(float(entry_low))
-        }
+        return {"entry": round(float(entry_low)), "sl_gtt": round(float(sl_bot)), "t1": round(float(t1_bot)), "t2": round(float(t2_bot)), "trail_sl": round(float(entry_low))}
 
 def record_paper_trade(bot_name, symbol, plan, qty=PAPER_QTY):
     try:
@@ -180,12 +168,7 @@ def upstox_live_price(instrument_key):
     if not UPSTOX_ENABLED:
         return None
     try:
-        r = requests.get(
-            f"{UPSTOX_BASE}/market-quote/quotes",
-            headers=upstox_headers(),
-            params={"instrument_key": instrument_key},
-            timeout=10
-        )
+        r = requests.get(f"{UPSTOX_BASE}/market-quote/quotes", headers=upstox_headers(), params={"instrument_key": instrument_key}, timeout=10)
         if r.status_code != 200:
             return None
         d = r.json().get("data", {}).get(instrument_key, {})
@@ -231,13 +214,14 @@ def get_upstox_candles(symbol, interval="day", days_back=365):
             print(f"Upstox candle fail {symbol} {interval} {r.status_code} {r.text[:200]}")
             return None
         candles = r.json().get("data", {}).get("candles", [])
-        df = upstox_candles_to_df(candles)
-        return df
+        return upstox_candles_to_df(candles)
     except Exception as e:
         print(f"Upstox candle err {symbol} {e}")
         return None
 
-NIFTY500 = ["RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","TATAMOTORS","ETERNAL","CDSL","PNB","KALYANKJIL","TITAN","ITC","LT","AXISBANK","KOTAKBANK","BAJFINANCE","HINDUNILVR","MARUTI","TATASTEEL","JSWSTEEL","ULTRACEMCO","ADANIENT","ADANIPORTS","POWERGRID","NTPC","ONGC","COALINDIA","BPCL","IOC","HDFCLIFE","SBILIFE","ICICIPRULI","BAJAJFINSV","M&M","EICHERMOT","HEROMOTOCO","BAJAJ-AUTO","APOLLOHOSP","DIVISLAB","SUNPHARMA","CIPLA","DRREDDY","GRASIM","HINDALCO","VEDL","TATAPOWER","ADANIGREEN","ADANIPOWER","IRFC","RVNL","HAL","BEL","BDL","MAZAGON","COCHINSHIP","BHEL","NHPC","SJVN","PFC","RECLTD","HUDCO","NBCC","IRCON","RAILTEL","TITAGARH","JUPITERWAGONS","GENSOL","SUZLON","IREDA","TATATECH","TATAELXSI","KPITTECH","PERSISTENT","COFORGE","LTIM","MPHASIS","TECHM","WIPRO","HCLTECH","ZOMATO","PAYTM","NYKAA","POLICYBZR","DELHIVERY","DMART","TRENT","VBL","NESTLEIND","BRITANNIA","DABUR","MARICO","GODREJCP","COLPAL","TATACONSUM","HATSUN","PAGEIND","RELAXO","CAMPUS","BATAINDIA","METROBRANDS","KAYNES","DIXON","AMBER","PGEL","SYRMA","CROMPTON","HAVELLS","POLYCAB","KEI","FINOLEX","SUPREMEIND","ASTRAL","APLAPOLLO","JINDALSTEL","SAIL","NMDC","NATIONALUM","HINDCOPPER","MOIL","GMDCLTD","MANGLMCEM","RAMCOCEM","SHREECEM","ACC","AMBUJACEM","DALMIABHA","JKCEMENT","STAR","ORIENTCEM","HEIDELBERG","PRISMJOHN","SAGAR","INDIACEM","CERA","KAJARIA","SOMANY","HSIL","RAJESHEXPO","THANGAMAYIL","KALYAN","PNBGILTS","PNBHOUSING","CANFIN","LICHSGFIN","GICHSGFIN","REPCOHOME","AAVAS","HOMEFIRST","APTUS","MANAPPURAM","MUTHOOTFIN","IIFL","CHOLAFIN","SHRIRAMFIN","MAHABANK","CENTRALBK","UCOBANK","BANKOFMAHA","INDIANB","IOB","PSB","J&KBANK","KARURVYSYA","FEDERALBNK","RBLBANK","IDFCFIRSTB","YESBANK","BANDHANBNK","CSBBANK","DCBBANK","CUB","TMB","KARNATAKA","SOUTHBANK","INDUSINDBK","AUBANK","EQUITASBNK","UJJIVANSFB","CAPITALSFB","ESAFSFB","JANA","SURYO","SPANDANA","CREDITACC","ARMAN","FIVE-STAR","SATIN","UJJIVAN","MFIN","MASFIN","PAISALO","CAPRIGLOBAL","PIRAMAL","JMFINANCIL","MOTILALOFS","ANGELONE","BSE","MCX","CDSL","NSDL","CAMS","KFINTECH","ANANDRATHI","NUVAMA","360ONE","IIFLSEC","GEOJIT","SMC","SHAREINDIA","EMKAY","MONARCH","PRUDENT","DPABHUSHAN","MANINFRA","OBEROIRLTY","PRESTIGE","BRIGADE","SOBHA","GODREJPROP","DLF","PHOENIXLTD","MACPOWER","ASHIANA","SUNTERRA","SHRIRAMPROP","PURAVANKARA","ARVIND","VARDHMAN","TRIDENT","WELSPUNLIV","INDOCOUNT","GOKEX","RAYMOND","KPRMILL","PAGE","WELCORP","JINDALSAW","RATNAMANI","MAHSEAMLES","APL","JTLIND","MANAKSIA","JINDALPOLY","HIMATSEIDE","BANSWRAS","RSWM","DONEAR","ALOKINDS","FILATEX","VTL","SUTLEJTEX","NITINSPIN","GHCL","GHCLTEXTIL","VARDHMANACR","INDORAMA","JBF","GARDENREACH","GRSE","PARADEEP","FACT","RCF","GSFC","GNFC","DEEPAKFERT","ZUARI","MANGCHE","CHAMBLFERT","NFL","KRIBHCO","COROMANDEL","UPL","PIIND","SUMICHEM","ATUL","AARTIIND","DEEPAKNTR","FINEORG","ALKYLAMINE","BALAMINES","VINATIORGA","CLEAN","ROSSARI","NEOGEN","ANURAS","GOPAL","LAXMI","TATACHEM","DCMSHRIRAM","TATAGU","IGL","MGL","GUJGASLTD","PETRONET","GAIL","OIL","MRPL","CHENNPETRO","NRL","BALMERLAWRIE","GULFOILLUB","CASTROLIND","SAVITA","APARINDS","TIDEWATER","PANAMAPET","GANDHARTU","MORGANITE","CARBORUNIV","GRINDWELL","WENDT","MMTC","STCINDIA","KIOCL","FERRO","IMFA","SHAKTI","JSL","JINDALSTEL"]
+# ===== NIFTY500 - DEDUPED in V20.3 =====
+_NIFTY500_RAW = ["RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","TATAMOTORS","ETERNAL","CDSL","PNB","KALYANKJIL","TITAN","ITC","LT","AXISBANK","KOTAKBANK","BAJFINANCE","HINDUNILVR","MARUTI","TATASTEEL","JSWSTEEL","ULTRACEMCO","ADANIENT","ADANIPORTS","POWERGRID","NTPC","ONGC","COALINDIA","BPCL","IOC","HDFCLIFE","SBILIFE","ICICIPRULI","BAJAJFINSV","M&M","EICHERMOT","HEROMOTOCO","BAJAJ-AUTO","APOLLOHOSP","DIVISLAB","SUNPHARMA","CIPLA","DRREDDY","GRASIM","HINDALCO","VEDL","TATAPOWER","ADANIGREEN","ADANIPOWER","IRFC","RVNL","HAL","BEL","BDL","MAZAGON","COCHINSHIP","BHEL","NHPC","SJVN","PFC","RECLTD","HUDCO","NBCC","IRCON","RAILTEL","TITAGARH","JUPITERWAGONS","GENSOL","SUZLON","IREDA","TATATECH","TATAELXSI","KPITTECH","PERSISTENT","COFORGE","LTIM","MPHASIS","TECHM","WIPRO","HCLTECH","ZOMATO","PAYTM","NYKAA","POLICYBZR","DELHIVERY","DMART","TRENT","VBL","NESTLEIND","BRITANNIA","DABUR","MARICO","GODREJCP","COLPAL","TATACONSUM","HATSUN","PAGEIND","RELAXO","CAMPUS","BATAINDIA","METROBRANDS","KAYNES","DIXON","AMBER","PGEL","SYRMA","CROMPTON","HAVELLS","POLYCAB","KEI","FINOLEX","SUPREMEIND","ASTRAL","APLAPOLLO","JINDALSTEL","SAIL","NMDC","NATIONALUM","HINDCOPPER","MOIL","GMDCLTD","MANGLMCEM","RAMCOCEM","SHREECEM","ACC","AMBUJACEM","DALMIABHA","JKCEMENT","STAR","ORIENTCEM","HEIDELBERG","PRISMJOHN","SAGAR","INDIACEM","CERA","KAJARIA","SOMANY","HSIL","RAJESHEXPO","THANGAMAYIL","KALYAN","PNBGILTS","PNBHOUSING","CANFIN","LICHSGFIN","GICHSGFIN","REPCOHOME","AAVAS","HOMEFIRST","APTUS","MANAPPURAM","MUTHOOTFIN","IIFL","CHOLAFIN","SHRIRAMFIN","MAHABANK","CENTRALBK","UCOBANK","BANKOFMAHA","INDIANB","IOB","PSB","J&KBANK","KARURVYSYA","FEDERALBNK","RBLBANK","IDFCFIRSTB","YESBANK","BANDHANBNK","CSBBANK","DCBBANK","CUB","TMB","KARNATAKA","SOUTHBANK","INDUSINDBK","AUBANK","EQUITASBNK","UJJIVANSFB","CAPITALSFB","ESAFSFB","JANA","SURYO","SPANDANA","CREDITACC","ARMAN","FIVE-STAR","SATIN","UJJIVAN","MFIN","MASFIN","PAISALO","CAPRIGLOBAL","PIRAMAL","JMFINANCIL","MOTILALOFS","ANGELONE","BSE","MCX","CDSL","NSDL","CAMS","KFINTECH","ANANDRATHI","NUVAMA","360ONE","IIFLSEC","GEOJIT","SMC","SHAREINDIA","EMKAY","MONARCH","PRUDENT","DPABHUSHAN","MANINFRA","OBEROIRLTY","PRESTIGE","BRIGADE","SOBHA","GODREJPROP","DLF","PHOENIXLTD","MACPOWER","ASHIANA","SUNTERRA","SHRIRAMPROP","PURAVANKARA","ARVIND","VARDHMAN","TRIDENT","WELSPUNLIV","INDOCOUNT","GOKEX","RAYMOND","KPRMILL","PAGE","WELCORP","JINDALSAW","RATNAMANI","MAHSEAMLES","APL","JTLIND","MANAKSIA","JINDALPOLY","HIMATSEIDE","BANSWRAS","RSWM","DONEAR","ALOKINDS","FILATEX","VTL","SUTLEJTEX","NITINSPIN","GHCL","GHCLTEXTIL","VARDHMANACR","INDORAMA","JBF","GARDENREACH","GRSE","PARADEEP","FACT","RCF","GSFC","GNFC","DEEPAKFERT","ZUARI","MANGCHE","CHAMBLFERT","NFL","KRIBHCO","COROMANDEL","UPL","PIIND","SUMICHEM","ATUL","AARTIIND","DEEPAKNTR","FINEORG","ALKYLAMINE","BALAMINES","VINATIORGA","CLEAN","ROSSARI","NEOGEN","ANURAS","GOPAL","LAXMI","TATACHEM","DCMSHRIRAM","TATAGU","IGL","MGL","GUJGASLTD","PETRONET","GAIL","OIL","MRPL","CHENNPETRO","NRL","BALMERLAWRIE","GULFOILLUB","CASTROLIND","SAVITA","APARINDS","TIDEWATER","PANAMAPET","GANDHARTU","MORGANITE","CARBORUNIV","GRINDWELL","WENDT","MMTC","STCINDIA","KIOCL","FERRO","IMFA","SHAKTI","JSL","JINDALSTEL"]
+NIFTY500 = list(dict.fromkeys(_NIFTY500_RAW))
 
 def safe_float(x, default=0.0):
     try:
@@ -301,17 +285,13 @@ def get_data_safe(symbol, period="1y", interval="1d"):
                 live = upstox_live_price(to_upstox_key(symbol))
                 if live and live > 0:
                     df.loc[df.index[-1], "Close"] = live
-                    print(f"Upstox Live {symbol}: {live}")
             except:
                 pass
             return flatten_df(df)
         else:
             print(f"Upstox fail {symbol} {interval} -> Yahoo fallback")
     try:
-        if symbol.startswith("^"):
-            ticker = symbol
-        else:
-            ticker = symbol + ".NS"
+        ticker = symbol if symbol.startswith("^") else symbol + ".NS"
         df = yf.download(ticker, period=period, interval=interval, progress=False, auto_adjust=False, timeout=25)
         df = flatten_df(df)
         if df is None or len(df) < 50:
@@ -319,6 +299,16 @@ def get_data_safe(symbol, period="1y", interval="1d"):
         return df
     except:
         return None
+
+def calc_rsi(series, period=14):
+    try:
+        delta = series.diff()
+        gain = delta.where(delta > 0, 0).rolling(period).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(period).mean()
+        rs = gain / (loss.replace(0, 1e-9))
+        return 100 - (100 / (1 + rs))
+    except:
+        return pd.Series([50] * len(series), index=series.index)
 
 def calc_pivot(df):
     try:
@@ -333,24 +323,94 @@ def calc_pivot(df):
         s2 = pp - (h - l)
         r3 = h + 2 * (pp - l)
         s3 = l - 2 * (h - pp)
-        return {
-            "pp": pp,
-            "r1": r1,
-            "r2": r2,
-            "s1": s1,
-            "s2": s2,
-            "r3": r3,
-            "s3": s3,
-            "prev_high": h,
-            "prev_low": l,
-            "prev_close": c
-        }
+        return {"pp": pp, "r1": r1, "r2": r2, "s1": s1, "s2": s2, "r3": r3, "s3": s3, "prev_high": h, "prev_low": l, "prev_close": c}
     except:
-        return {
-            "pp": 0, "r1": 0, "r2": 0,
-            "s1": 0, "s2": 0, "r3": 0, "s3": 0,
-            "prev_high": 0, "prev_low": 0, "prev_close": 0
-        }
+        return {"pp": 0, "r1": 0, "r2": 0, "s1": 0, "s2": 0, "r3": 0, "s3": 0, "prev_high": 0, "prev_low": 0, "prev_close": 0}
+
+# ===== BALA AVWP - V20.3 - INLINE, NO EXTERNAL FILE =====
+def _get_swing_lows(df, left=5, right=5):
+    lows = []
+    try:
+        for i in range(left, len(df) - right):
+            window = df["Low"].iloc[i-left:i+right+1]
+            if df["Low"].iloc[i] == window.min():
+                lows.append((df.index[i], safe_float(df["Low"].iloc[i])))
+    except Exception as e:
+        print(f"swing low err {e}")
+    return lows
+
+def _anchored_vwap(df, anchor_idx):
+    try:
+        sub = df.iloc[anchor_idx:].copy()
+        tp = (sub["High"] + sub["Low"] + sub["Close"]) / 3
+        pv = (tp * sub["Volume"]).cumsum()
+        vv = sub["Volume"].cumsum().replace(0, np.nan)
+        return safe_float((pv / vv).iloc[-1])
+    except:
+        return 0
+
+def bala_avwp_swing(symbol, df_daily):
+    try:
+        if df_daily is None or len(df_daily) < 220:
+            return None
+        df = df_daily.copy()
+        df["E20"] = df["Close"].ewm(span=20, adjust=False).mean()
+        df["E50"] = df["Close"].ewm(span=50, adjust=False).mean()
+        df["E200"] = df["Close"].ewm(span=200, adjust=False).mean()
+        df["E400"] = df["Close"].ewm(span=400, adjust=False).mean()
+        ema20 = safe_float(df["E20"].iloc[-1])
+        ema50 = safe_float(df["E50"].iloc[-1])
+        ema200 = safe_float(df["E200"].iloc[-1])
+        ema400 = safe_float(df["E400"].iloc[-1])
+        close = safe_float(df["Close"].iloc[-1])
+        low = safe_float(df["Low"].iloc[-1])
+        open_p = safe_float(df["Open"].iloc[-1])
+        rsi_d = safe_float(calc_rsi(df["Close"]).iloc[-1])
+        vol_ema20 = safe_float(df["Volume"].ewm(span=20, adjust=False).mean().iloc[-1])
+        if not (ema20 > ema50 and close > ema200 and low <= ema20 * 1.03 and close >= ema20 * 0.97 and close <= ema20 * 1.04 and close > open_p and close > 100 and 42 <= rsi_d <= 63 and vol_ema20 > 300000):
+            return None
+        mo = get_data_safe(symbol, period="5y", interval="1mo")
+        if mo is None or len(mo) < 15:
+            return None
+        rsi_m = safe_float(calc_rsi(mo["Close"]).iloc[-1])
+        if not (rsi_m > 60):
+            return None
+        wk = get_data_safe(symbol, period="2y", interval="1wk")
+        if wk is None or len(wk) < 50:
+            return None
+        wk["E200"] = wk["Close"].ewm(span=200, adjust=False).mean()
+        wk["E400"] = wk["Close"].ewm(span=400, adjust=False).mean()
+        w200 = safe_float(wk["E200"].iloc[-1])
+        w400 = safe_float(wk["E400"].iloc[-1])
+        if math.isnan(w400) or w400 == 0:
+            wk["E100"] = wk["Close"].ewm(span=100, adjust=False).mean()
+            w400 = safe_float(wk["E100"].iloc[-1])
+        if not (ema200 >= ema400 and w200 >= w400):
+            return None
+        df_1h = get_data_safe(symbol, period="1y", interval="1h")
+        if df_1h is None or len(df_1h) < 60:
+            return None
+        swings = _get_swing_lows(df_1h, 5, 5)
+        if len(swings) < 2:
+            return None
+        latest_idx = df_1h.index.get_loc(swings[-1][0])
+        avwp = _anchored_vwap(df_1h, latest_idx)
+        if avwp <= 0:
+            return None
+        price = safe_float(df_1h["Close"].iloc[-1])
+        swing_low = swings[-1][1]
+        if abs(price - avwp) / avwp <= 0.004 and price >= avwp:
+            sl = round(swing_low * 0.996, 2)
+            if sl % 1 == 0:
+                sl -= 0.30
+            risk = price - sl
+            if risk <= 0:
+                return None
+            return {"symbol": symbol, "avwp": round(avwp, 2), "entry_avwp": round(price, 2), "sl_avwp": sl, "swing_low": swing_low, "t1_avwp": round(price + risk * 1.5, 2), "t2_avwp": round(price + risk * 2.5, 2), "rsi_d": round(rsi_d, 1), "rsi_m": round(rsi_m, 1)}
+        return None
+    except Exception as e:
+        print(f"bala_avwp {symbol} err {e}")
+        return None
 
 def get_market_direction():
     try:
@@ -358,13 +418,7 @@ def get_market_direction():
         bn = get_data_safe("^NSEBANK", period="3mo", interval="1d")
         n_cmp = safe_float(nifty["Close"].iloc[-1]) if nifty is not None else 0
         bn_cmp = safe_float(bn["Close"].iloc[-1]) if bn is not None else 0
-        def rsi_fn(series, period=14):
-            delta = series.diff()
-            gain = delta.where(delta > 0, 0).rolling(period).mean()
-            loss = (-delta.where(delta < 0, 0)).rolling(period).mean()
-            rs = gain / (loss.replace(0, 1e-9))
-            return 100 - (100 / (1 + rs))
-        n_rsi = safe_float(rsi_fn(nifty["Close"]).iloc[-1]) if nifty is not None else 50
+        n_rsi = safe_float(calc_rsi(nifty["Close"]).iloc[-1]) if nifty is not None else 50
         bull = 0
         if nifty is not None and len(nifty) > 60:
             nifty["E8"] = nifty["Close"].ewm(span=8, adjust=False).mean()
@@ -388,26 +442,10 @@ def get_market_direction():
             direction = "WEAK"
         else:
             direction = "SIDEWAYS"
-        return {
-            "direction": direction,
-            "nifty_cmp": n_cmp,
-            "bn_cmp": bn_cmp,
-            "nifty_rsi": n_rsi,
-            "bull_score": bull,
-            "nifty_pivot": calc_pivot(nifty) if nifty is not None else calc_pivot(pd.DataFrame()),
-            "bn_pivot": calc_pivot(bn) if bn is not None else calc_pivot(pd.DataFrame())
-        }
+        return {"direction": direction, "nifty_cmp": n_cmp, "bn_cmp": bn_cmp, "nifty_rsi": n_rsi, "bull_score": bull, "nifty_pivot": calc_pivot(nifty) if nifty is not None else calc_pivot(pd.DataFrame()), "bn_pivot": calc_pivot(bn) if bn is not None else calc_pivot(pd.DataFrame())}
     except Exception as e:
         print(f"Market err {e}")
-        return {
-            "direction": "SIDEWAYS",
-            "nifty_cmp": 0,
-            "bn_cmp": 0,
-            "nifty_rsi": 50,
-            "bull_score": 3,
-            "nifty_pivot": calc_pivot(pd.DataFrame()),
-            "bn_pivot": calc_pivot(pd.DataFrame())
-        }
+        return {"direction": "SIDEWAYS", "nifty_cmp": 0, "bn_cmp": 0, "nifty_rsi": 50, "bull_score": 3, "nifty_pivot": calc_pivot(pd.DataFrame()), "bn_pivot": calc_pivot(pd.DataFrame())}
 
 def analyze_from_df(symbol, df):
     try:
@@ -423,11 +461,7 @@ def analyze_from_df(symbol, df):
         e20 = safe_float(df["E20"].iloc[-1])
         e50 = safe_float(df["E50"].iloc[-1])
         e200 = safe_float(df["E200"].iloc[-1])
-        delta = df["Close"].diff()
-        gain = delta.where(delta > 0, 0).rolling(14).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
-        rs = gain / (loss.replace(0, 1e-9))
-        rsi = safe_float((100 - (100 / (1 + rs))).iloc[-1])
+        rsi = safe_float(calc_rsi(df["Close"]).iloc[-1])
         vol_mean = safe_float(df["Volume"].iloc[-21:-1].mean())
         vol_ratio = safe_float(df["Volume"].iloc[-1] / vol_mean) if vol_mean > 0 else 0
         hm = cmp_ > e200
@@ -457,14 +491,7 @@ def analyze_from_df(symbol, df):
         entry_high = round(cmp_, 2)
         prob = min(95, 55 + score * 0.35)
         win = min(92, 50 + score * 0.3)
-        return {
-            "symbol": symbol, "cmp": cmp_, "ema8": e8, "ema20": e20,
-            "ema50": e50, "ema200": e200, "rsi": rsi, "vol_ratio": vol_ratio,
-            "hm": hm, "true_bala": true_bala, "trend": trend, "htf": htf,
-            "score": score, "final_rank": score, "prob": prob, "win": win,
-            "sl": sl, "t1": t1, "t2": t2,
-            "entry_low": entry_low, "entry_high": entry_high
-        }
+        return {"symbol": symbol, "cmp": cmp_, "ema8": e8, "ema20": e20, "ema50": e50, "ema200": e200, "rsi": rsi, "vol_ratio": vol_ratio, "hm": hm, "true_bala": true_bala, "trend": trend, "htf": htf, "score": score, "final_rank": score, "prob": prob, "win": win, "sl": sl, "t1": t1, "t2": t2, "entry_low": entry_low, "entry_high": entry_high, "bala_avwp": False, "bala_data": None}
     except Exception as e:
         print(f"Analyze {symbol} err {e}")
         return None
@@ -539,14 +566,7 @@ def check_bala_mtf(symbol):
             bala_score += 15
         if w_cmp > prev_ath:
             bala_score += 15
-        return {
-            "weekly_pullback": weekly_pullback, "weekly_strong": weekly_strong,
-            "mtf_ok": mtf_ok, "htf_ok": htf_ok,
-            "w8": w8, "w20": w20, "w50": w50, "w_avwap": w_avwap,
-            "prev_ath": prev_ath, "m8": m8, "m20": m20, "m50": m50, "m100": m100,
-            "h200": h200, "h400": h400, "ladder": ladder,
-            "bala_score": bala_score, "dist_to_w20": dist_to_w20
-        }
+        return {"weekly_pullback": weekly_pullback, "weekly_strong": weekly_strong, "mtf_ok": mtf_ok, "htf_ok": htf_ok, "w8": w8, "w20": w20, "w50": w50, "w_avwap": w_avwap, "prev_ath": prev_ath, "m8": m8, "m20": m20, "m50": m50, "m100": m100, "h200": h200, "h400": h400, "ladder": ladder, "bala_score": bala_score, "dist_to_w20": dist_to_w20}
     except Exception as e:
         print(f"Bala {symbol} err {e}")
         return None
@@ -571,7 +591,7 @@ def send_telegram(msg):
                 resp = requests.post(url, json={"chat_id": cid, "text": ch}, timeout=20)
                 print(f"Telegram to {cid} chunk {idx+1}/{len(chunks)} status {resp.status_code}")
                 if resp.status_code != 200:
-                    print(f"Telegram error {cid}: {resp.text[:500]} - Did user press START?")
+                    print(f"Telegram error {cid}: {resp.text[:500]}")
         except Exception as e:
             print(f"Telegram send err {cid} {e}")
 
@@ -657,7 +677,7 @@ def build_msg(market, results, bala_list, paper_updates=None):
     now_ist = datetime.now(IST)
     now_str = now_ist.strftime("%d-%m %I:%M %p IST")
     data_src = "Upstox Live" if UPSTOX_ENABLED else "Yahoo Fallback"
-    msg = f"MASTER V20.1 - {now_str} - DAY + SWING TRADING\nData: {data_src}\n"
+    msg = f"MASTER V20.3 - {now_str} - DAY + SWING TRADING\nData: {data_src}\n"
     msg += f"Market: {market['direction']} | Nifty:{market['nifty_cmp']:.0f} RSI:{market['nifty_rsi']:.0f} Bull:{market['bull_score']}/5\n"
     npv = market["nifty_pivot"]
     bpv = market["bn_pivot"]
@@ -681,7 +701,8 @@ def build_msg(market, results, bala_list, paper_updates=None):
     htf = [x for x in results if x["htf"]]
     trend = [x for x in results if x["trend"]]
     hm = [x for x in results if x["hm"]]
-    msg += f"\nScan:{len(results)}/{len(NIFTY500)} TB:{len(tb)} HTF:{len(htf)}\n\n"
+    bala_avwp_list = [x for x in results if x.get("bala_avwp")]
+    msg += f"\nScan:{len(results)}/{len(NIFTY500)} TB:{len(tb)} HTF:{len(htf)} BALA_AVWP:{len(bala_avwp_list)}\n\n"
     def add(title, lst):
         nonlocal msg
         msg += f"{title} Best 3\n"
@@ -690,17 +711,24 @@ def build_msg(market, results, bala_list, paper_updates=None):
             return
         for i, r in enumerate(lst[:3]):
             plan = swing_gtt_plan(r['entry_low'], r['entry_high'], r['sl'], r['t1'], r['t2'])
-            msg += f"{i+1}. {r['symbol']} CMP:{r['cmp']:.0f} R:{r['final_rank']:.0f} P:{r['prob']:.0f}% W:{r['win']:.0f}%\n   Entry:{r['entry_low']:.0f}-{r['entry_high']:.0f} SL:{r['sl']:.0f} T1:{r['t1']:.0f} T2:{r['t2']:.0f}\n"
+            tag = " 🟢 BALA AVWP" if r.get("bala_avwp") else ""
+            msg += f"{i+1}. {r['symbol']} CMP:{r['cmp']:.0f} R:{r['final_rank']:.0f} P:{r['prob']:.0f}% W:{r['win']:.0f}%{tag}\n   Entry:{r['entry_low']:.0f}-{r['entry_high']:.0f} SL:{r['sl']:.0f} T1:{r['t1']:.0f} T2:{r['t2']:.0f}\n"
+            if r.get("bala_data"):
+                bd = r["bala_data"]
+                msg += f"   AVWP:{bd['avwp']:.0f} SL_AVWP:{bd['sl_avwp']:.0f} RSI D:{bd['rsi_d']:.0f} M:{bd['rsi_m']:.0f} Early Entry\n"
             msg += f"   PAPER GTT: SL GTT {plan['sl_gtt']:.0f} (100%) | T1 GTT {plan['t1']:.0f} (50%) | T2 GTT {plan['t2']:.0f} (50%) | Trail SL->{plan['trail_sl']:.0f} after T1\n"
         msg += "\n"
     add("DAY - TRUE BALA", tb)
     add("DAY - HTF CLUSTER", htf)
     add("SWING - TREND", trend)
     add("SWING - HM", hm)
+    if bala_avwp_list:
+        add("SWING - BALA AVWP EARLY ENTRY", bala_avwp_list)
     msg += "FINAL BEST 3 FOR TODAY - PAPER TRADE ONLY - SWING\n\n"
     for i, r in enumerate(results[:3]):
-        plan = swing_gtt_plan(r['entry_low'], r['entry_high'], r['sl'], r['t1'], r['t2'])
-        msg += f"{i+1}. {r['symbol']} CMP:{r['cmp']:.0f} Entry:{r['entry_low']:.0f}-{r['entry_high']:.0f} SL:{r['sl']:.0f} T1:{r['t1']:.0f} T2:{r['t2']:.0f}\n"
+        plan = swing_gtt_plan(r["entry_low"], r["entry_high"], r["sl"], r["t1"], r["t2"])
+        tag = " 🟢 BALA AVWP" if r.get("bala_avwp") else ""
+        msg += f"{i+1}. {r['symbol']}{tag} CMP:{r['cmp']:.0f} Entry:{r['entry_low']:.0f}-{r['entry_high']:.0f} SL:{r['sl']:.0f} T1:{r['t1']:.0f} T2:{r['t2']:.0f}\n"
         msg += f"   PAPER: Buy Avg {plan['entry']:.0f} | SL GTT {plan['sl_gtt']:.0f} | T1 {plan['t1']:.0f} 50% | T2 {plan['t2']:.0f} 50% | Qty {PAPER_QTY} VIRTUAL - No real order\n"
     msg += "\nDay Trade: Use T1 only. Swing: Hold till T2, SL = 50EMA.\nPAPER ONLY: No real GTT placed in Upstox. Bot tracks SL/T1/T2 virtually in paper_trades.csv\n"
     msg += "\nBot 1 = Finder only. For real trade with Rs 5000 risk + exact qty, follow Bot 2 at 9:45 AM."
@@ -708,8 +736,9 @@ def build_msg(market, results, bala_list, paper_updates=None):
 
 def main():
     now_ist = datetime.now(IST)
-    # TIME GUARD REMOVED - Run anytime (manual or cron)
-    print(f"V20.1 Start {now_ist.strftime('%d-%m-%Y %H:%M IST')} Scan:DAY_SWING Chats:{CHAT_IDS}")
+    # V20.3 - NO TIME GUARD - Runs anytime, any day, any number of times
+    # GitHub Cron may be late, so manual run is primary. No weekend / time check.
+    print(f"V20.3 Start {now_ist.strftime('%d-%m-%Y %H:%M %A IST')} Scan:DAY_SWING Chats:{CHAT_IDS}")
     try:
         paper_updates = []
         try:
@@ -731,7 +760,32 @@ def main():
                 lad = bala_map[r["symbol"]]["ladder"]
                 if lad["e1"] > 0:
                     r["sl"] = round(min(lad["e1"] * 0.995, r["ema50"]), 2)
+        print("V20.3 Bala AVWP check Top 30...")
+        for r in tb_list[:30]:
+            try:
+                df_d = data_dict.get(r["symbol"])
+                bd = bala_avwp_swing(r["symbol"], df_d)
+                if bd:
+                    r["bala_avwp"] = True
+                    r["bala_data"] = bd
+                    r["score"] += 12
+                    r["prob"] = min(95, r["prob"] + 12)
+                    r["win"] = min(92, r["win"] + 5)
+                    bala_sl = bd["sl_avwp"]
+                    if bala_sl < r["cmp"] and bala_sl > r["cmp"] * 0.97:
+                        r["sl"] = round(min(r["sl"], bala_sl), 2)
+                    risk = r["cmp"] - r["sl"]
+                    if risk > 0:
+                        r["t1"] = round(r["cmp"] + risk * 2, 2)
+                        r["t2"] = round(r["cmp"] + risk * 4, 2)
+                    print(f"  BALA AVWP PASS {r['symbol']} AVWP {bd['avwp']} SL {bd['sl_avwp']}")
+            except Exception as e:
+                print(f"Bala AVWP skip {r.get('symbol')} {e}")
         final_list = RiskAgent().run(tb_list, market)
+        for r in final_list:
+            if r.get("bala_avwp"):
+                r["final_rank"] = round(r["final_rank"] + 12, 1)
+        final_list = sorted(final_list, key=lambda x: x["final_rank"], reverse=True)
         if len(final_list) > 0:
             for r in final_list[:3]:
                 try:
@@ -740,12 +794,12 @@ def main():
                 except Exception as e:
                     print(f"Paper record skip {r.get('symbol')} {e}")
         MessengerAgent().run(market, final_list, bala_list, paper_updates=paper_updates)
-        print("V20.1 All Agents Done")
+        print("V20.3 All Agents Done")
     except Exception as e:
-        print(f"V20.1 CRASH {e}")
+        print(f"V20.3 CRASH {e}")
         traceback.print_exc()
         try:
-            send_telegram(f"MASTER V20.1 CRASHED but handled: {e} Time: {now_ist}")
+            send_telegram(f"MASTER V20.3 CRASHED but handled: {e} Time: {now_ist}")
         except:
             pass
 
