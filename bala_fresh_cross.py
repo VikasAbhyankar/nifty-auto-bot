@@ -1,10 +1,8 @@
-# BALA FRESH CROSS V1.0 - ONE NEW STRATEGY ONLY
-# Based ONLY on:
-# MONTHLY: EMA(8) > EMA(20) + RSI(14) > 60
-# WEEKLY: Close > EMA(20), Close <= EMA(20)*1.03, Close > Open, Close > Prev Close
-# 15-MINUTE: EMA(200) > EMA(400) NOW + EMA(200) <= EMA(400) 1 candle ago = FRESH CROSS
-# RUNS ANYTIME - Manual or 9:55 AM Cron | PAPER ONLY - No live order
-# Data: Upstox Live (Primary) + Yahoo Fallback | Telegram: You + Prashant + Nishant
+# BALA FRESH CROSS V1.1 - TWO STRATEGIES IN ONE FILE
+# Strategy 1: BALA FRESH CROSS - Monthly Strong + Weekly Pullback + 15m Fresh Cross EMA200>EMA400
+# Strategy 2: PROXY AVWP - Chartink PROXY AVWP 20112026 by k prashant - Daily Breakout + Volume + RSI
+# RUNS ANYTIME - Manual or 9:58 AM Cron | PAPER ONLY - No live order
+# Data: Upstox Live (Primary) + Yahoo Fallback
 import os, time, math, traceback, csv
 from datetime import datetime, timedelta, timezone
 import numpy as np
@@ -36,12 +34,11 @@ for fid in ["5239892901", "9000971028"]:
     if fid not in _raw_ids:
         _raw_ids.append(fid)
 CHAT_IDS = _raw_ids
-print(f"BALA FRESH CROSS V1.0 Targets: {CHAT_IDS} | Upstox: {UPSTOX_ENABLED}")
+print(f"BALA FRESH CROSS V1.1 Targets: {CHAT_IDS} | Upstox: {UPSTOX_ENABLED}")
 
 PAPER_FILE = "paper_trades_fresh_cross.csv"
 PAPER_QTY = 100
 
-# ===== NIFTY500 =====
 _NIFTY500_RAW = ["RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","TATAMOTORS","ETERNAL","CDSL","PNB","KALYANKJIL","TITAN","ITC","LT","AXISBANK","KOTAKBANK","BAJFINANCE","HINDUNILVR","MARUTI","TATASTEEL","JSWSTEEL","ULTRACEMCO","ADANIENT","ADANIPORTS","POWERGRID","NTPC","ONGC","COALINDIA","BPCL","IOC","HDFCLIFE","SBILIFE","ICICIPRULI","BAJAJFINSV","M&M","EICHERMOT","HEROMOTOCO","BAJAJ-AUTO","APOLLOHOSP","DIVISLAB","SUNPHARMA","CIPLA","DRREDDY","GRASIM","HINDALCO","VEDL","TATAPOWER","ADANIGREEN","ADANIPOWER","IRFC","RVNL","HAL","BEL","BDL","MAZAGON","COCHINSHIP","BHEL","NHPC","SJVN","PFC","RECLTD","HUDCO","NBCC","IRCON","RAILTEL","TITAGARH","JUPITERWAGONS","GENSOL","SUZLON","IREDA","TATATECH","TATAELXSI","KPITTECH","PERSISTENT","COFORGE","LTIM","MPHASIS","TECHM","WIPRO","HCLTECH","ZOMATO","PAYTM","NYKAA","POLICYBZR","DELHIVERY","DMART","TRENT","VBL","NESTLEIND","BRITANNIA","DABUR","MARICO","GODREJCP","COLPAL","TATACONSUM","HATSUN","PAGEIND","RELAXO","CAMPUS","BATAINDIA","METROBRANDS","KAYNES","DIXON","AMBER","PGEL","SYRMA","CROMPTON","HAVELLS","POLYCAB","KEI","FINOLEX","SUPREMEIND","ASTRAL","APLAPOLLO","JINDALSTEL","SAIL","NMDC","NATIONALUM","HINDCOPPER","MOIL","GMDCLTD","MANGLMCEM","RAMCOCEM","SHREECEM","ACC","AMBUJACEM","DALMIABHA","JKCEMENT","STAR","ORIENTCEM","HEIDELBERG","PRISMJOHN","SAGAR","INDIACEM","CERA","KAJARIA","SOMANY","HSIL","RAJESHEXPO","THANGAMAYIL","KALYAN","PNBGILTS","PNBHOUSING","CANFIN","LICHSGFIN","GICHSGFIN","REPCOHOME","AAVAS","HOMEFIRST","APTUS","MANAPPURAM","MUTHOOTFIN","IIFL","CHOLAFIN","SHRIRAMFIN","MAHABANK","CENTRALBK","UCOBANK","BANKOFMAHA","INDIANB","IOB","PSB","J&KBANK","KARURVYSYA","FEDERALBNK","RBLBANK","IDFCFIRSTB","YESBANK","BANDHANBNK","CSBBANK","DCBBANK","CUB","TMB","KARNATAKA","SOUTHBANK","INDUSINDBK","AUBANK","EQUITASBNK","UJJIVANSFB","CAPITALSFB","ESAFSFB","JANA","SURYO","SPANDANA","CREDITACC","ARMAN","FIVE-STAR","SATIN","UJJIVAN","MFIN","MASFIN","PAISALO","CAPRIGLOBAL","PIRAMAL","JMFINANCIL","MOTILALOFS","ANGELONE","BSE","MCX","CDSL","NSDL","CAMS","KFINTECH","ANANDRATHI","NUVAMA","360ONE","IIFLSEC","GEOJIT","SMC","SHAREINDIA","EMKAY","MONARCH","PRUDENT","DPABHUSHAN","MANINFRA","OBEROIRLTY","PRESTIGE","BRIGADE","SOBHA","GODREJPROP","DLF","PHOENIXLTD","MACPOWER","ASHIANA","SUNTERRA","SHRIRAMPROP","PURAVANKARA","ARVIND","VARDHMAN","TRIDENT","WELSPUNLIV","INDOCOUNT","GOKEX","RAYMOND","KPRMILL","PAGE","WELCORP","JINDALSAW","RATNAMANI","MAHSEAMLES","APL","JTLIND","MANAKSIA","JINDALPOLY","HIMATSEIDE","BANSWRAS","RSWM","DONEAR","ALOKINDS","FILATEX","VTL","SUTLEJTEX","NITINSPIN","GHCL","GHCLTEXTIL","VARDHMANACR","INDORAMA","JBF","GARDENREACH","GRSE","PARADEEP","FACT","RCF","GSFC","GNFC","DEEPAKFERT","ZUARI","MANGCHE","CHAMBLFERT","NFL","KRIBHCO","COROMANDEL","UPL","PIIND","SUMICHEM","ATUL","AARTIIND","DEEPAKNTR","FINEORG","ALKYLAMINE","BALAMINES","VINATIORGA","CLEAN","ROSSARI","NEOGEN","ANURAS","GOPAL","LAXMI","TATACHEM","DCMSHRIRAM","TATAGU","IGL","MGL","GUJGASLTD","PETRONET","GAIL","OIL","MRPL","CHENNPETRO","NRL","BALMERLAWRIE","GULFOILLUB","CASTROLIND","SAVITA","APARINDS","TIDEWATER","PANAMAPET","GANDHARTU","MORGANITE","CARBORUNIV","GRINDWELL","WENDT","MMTC","STCINDIA","KIOCL","FERRO","IMFA","SHAKTI","JSL","JINDALSTEL"]
 NIFTY500 = list(dict.fromkeys(_NIFTY500_RAW))
 
@@ -103,7 +100,6 @@ def calc_atr(df, n=14):
     except Exception:
         return pd.Series([0] * len(df), index=df.index)
 
-# ===== UPSTOX =====
 def upstox_headers():
     return {"Authorization": f"Bearer {UPSTOX_TOKEN}", "Accept": "application/json"}
 
@@ -204,14 +200,9 @@ def get_data_safe(symbol, period="1y", interval="1d"):
     except Exception:
         return None
 
-# ===== THE ONLY STRATEGY - BALA FRESH CROSS =====
+# ===== STRATEGY 1 - BALA FRESH CROSS =====
 def check_fresh_cross_strategy(symbol):
-    """
-    Returns dict if ALL 3 pass, else None.
-    No other filter - No AVWP, No RSI Daily, No Volume, No Trend - Only your 3 rules.
-    """
     try:
-        # --- 1. MONTHLY — STRONG TREND ---
         mo = get_data_safe(symbol, period="5y", interval="1mo")
         if mo is None or len(mo) < 21:
             return None
@@ -219,11 +210,8 @@ def check_fresh_cross_strategy(symbol):
         mo_ema8 = safe_float(mo_close.ewm(span=8, adjust=False).mean().iloc[-1])
         mo_ema20 = safe_float(mo_close.ewm(span=20, adjust=False).mean().iloc[-1])
         mo_rsi = safe_float(calc_rsi(mo_close, 14).iloc[-1])
-        # Rule 1: Monthly EMA8 > EMA20 AND Monthly RSI > 60
         if not (mo_ema8 > mo_ema20 and mo_rsi > 60):
             return None
-
-        # --- 2. WEEKLY ---
         wk = get_data_safe(symbol, period="2y", interval="1wk")
         if wk is None or len(wk) < 22:
             return None
@@ -231,7 +219,6 @@ def check_fresh_cross_strategy(symbol):
         wk_open = safe_float(wk["Open"].iloc[-1])
         wk_prev_close = safe_float(wk["Close"].iloc[-2])
         wk_ema20 = safe_float(wk["Close"].ewm(span=20, adjust=False).mean().iloc[-1])
-        # Rule 2: All 4 must pass
         if not (wk_close > wk_ema20):
             return None
         if not (wk_close <= wk_ema20 * 1.03):
@@ -240,9 +227,6 @@ def check_fresh_cross_strategy(symbol):
             return None
         if not (wk_close > wk_prev_close):
             return None
-
-        # --- 3. 15-MINUTE — FRESH CROSSOVER ---
-        # Yahoo 5d 15m - need 400+ candles for EMA400
         df_15 = None
         try:
             ticker = symbol + ".NS"
@@ -258,21 +242,15 @@ def check_fresh_cross_strategy(symbol):
         e400_now = safe_float(e400.iloc[-1])
         e200_prev = safe_float(e200.iloc[-2])
         e400_prev = safe_float(e400.iloc[-2])
-        # Rule 3: NOW EMA200 > EMA400 AND 1 candle ago EMA200 <= EMA400
         if not (e200_now > e400_now and e200_prev <= e400_prev):
             return None
-
-        # --- ALL 3 PASSED - BUILD ENTRY / SL / TARGET ---
-        # CMP = Daily close / Live
         df_d = get_data_safe(symbol, period="6mo", interval="1d")
         if df_d is None or len(df_d) < 30:
             return None
         cmp_ = safe_float(df_d["Close"].iloc[-1])
         atr = safe_float(calc_atr(df_d).iloc[-1])
-        # Entry: CMP ke paas - Fresh Cross ke baad pullback ka wait mat karo, CMP hi entry hai
         entry_low = round(cmp_ * 0.998, 2)
         entry_high = round(cmp_, 2)
-        # SL: Weekly EMA20 ke neeche ya 0.8% - jo bada ho, wahi SL (Fresh Cross fail = EMA20 break)
         sl_by_ema = round(wk_ema20 * 0.996, 2)
         sl_by_pct = round(cmp_ * 0.992, 2)
         sl = round(min(sl_by_ema, sl_by_pct), 2)
@@ -285,49 +263,120 @@ def check_fresh_cross_strategy(symbol):
         t1 = round(entry_high + risk * 1.5, 2)
         t2 = round(entry_high + risk * 2.5, 2)
         sl_pct = round(risk / entry_high * 100, 2)
-        # Score: Fresh Cross is rare, so high prob
-        # Monthly RSI jitna strong, utna score zyada
         score = 80
         if mo_rsi > 65:
             score += 10
         if mo_rsi > 70:
             score += 5
-        # Weekly close EMA20 ke jitna paas, utna accha pullback entry
         dist_w = abs(wk_close - wk_ema20) / wk_ema20 * 100
         if dist_w <= 1.0:
             score += 5
         prob = min(95, score)
         win = min(92, 70 + (score - 80) * 1.0)
-
-        return {
-            "symbol": symbol,
-            "cmp": round(cmp_, 2),
-            "entry_low": entry_low,
-            "entry_high": entry_high,
-            "sl": sl,
-            "t1": t1,
-            "t2": t2,
-            "sl_pct": sl_pct,
-            "risk": round(risk, 2),
-            "score": score,
-            "prob": prob,
-            "win": win,
-            "monthly_ema8": round(mo_ema8, 2),
-            "monthly_ema20": round(mo_ema20, 2),
-            "monthly_rsi": round(mo_rsi, 1),
-            "weekly_close": round(wk_close, 2),
-            "weekly_ema20": round(wk_ema20, 2),
-            "weekly_open": round(wk_open, 2),
-            "weekly_prev_close": round(wk_prev_close, 2),
-            "dist_weekly_pct": round(dist_w, 2),
-            "e200_now": round(e200_now, 2),
-            "e400_now": round(e400_now, 2),
-            "e200_prev": round(e200_prev, 2),
-            "e400_prev": round(e400_prev, 2),
-            "atr": round(atr, 2),
-        }
+        return {"symbol": symbol, "strategy": "FRESH CROSS", "cmp": round(cmp_, 2), "entry_low": entry_low, "entry_high": entry_high, "sl": sl, "t1": t1, "t2": t2, "sl_pct": sl_pct, "risk": round(risk, 2), "score": score, "prob": prob, "win": win, "monthly_ema8": round(mo_ema8, 2), "monthly_ema20": round(mo_ema20, 2), "monthly_rsi": round(mo_rsi, 1), "weekly_close": round(wk_close, 2), "weekly_ema20": round(wk_ema20, 2), "weekly_open": round(wk_open, 2), "weekly_prev_close": round(wk_prev_close, 2), "dist_weekly_pct": round(dist_w, 2), "e200_now": round(e200_now, 2), "e400_now": round(e400_now, 2), "e200_prev": round(e200_prev, 2), "e400_prev": round(e400_prev, 2), "atr": round(atr, 2)}
     except Exception as e:
         print(f"Fresh Cross {symbol} err {e}")
+        return None
+
+# ===== STRATEGY 2 - PROXY AVWP - Chartink PROXY AVWP 20112026 =====
+def check_proxy_avwp_strategy(symbol):
+    """
+    Chartink PROXY AVWP 20112026:
+    Daily Close > 1 day ago High
+    Daily Close > 5 days ago High
+    Daily Close > Daily EMA20
+    Daily EMA20 > Daily EMA50
+    Daily Volume > 1.5 * SMA(Volume,20)
+    Daily RSI(9) > 55
+    Daily Close > 100
+    Daily Close > 1 day ago Close
+    Monthly RSI(14) > 60
+    Price to Book > 1 (if available, else skip - Yahoo P/B missing hota hai)
+    """
+    try:
+        df_d = get_data_safe(symbol, period="1y", interval="1d")
+        if df_d is None or len(df_d) < 60:
+            return None
+        close = safe_float(df_d["Close"].iloc[-1])
+        prev_close = safe_float(df_d["Close"].iloc[-2])
+        high_1ago = safe_float(df_d["High"].iloc[-2])
+        high_5ago = safe_float(df_d["High"].iloc[-6])
+        vol = safe_float(df_d["Volume"].iloc[-1])
+        vol_sma20 = safe_float(df_d["Volume"].iloc[-21:-1].mean())
+        ema20 = safe_float(df_d["Close"].ewm(span=20, adjust=False).mean().iloc[-1])
+        ema50 = safe_float(df_d["Close"].ewm(span=50, adjust=False).mean().iloc[-1])
+        rsi9 = safe_float(calc_rsi(df_d["Close"], 9).iloc[-1])
+        # 8 Daily filters - sab pass hone chahiye
+        if not (close > high_1ago):
+            return None
+        if not (close > high_5ago):
+            return None
+        if not (close > ema20):
+            return None
+        if not (ema20 > ema50):
+            return None
+        if not (vol_sma20 > 0 and vol > vol_sma20 * 1.5):
+            return None
+        if not (rsi9 > 55):
+            return None
+        if not (close > 100):
+            return None
+        if not (close > prev_close):
+            return None
+        # Monthly RSI > 60
+        mo = get_data_safe(symbol, period="5y", interval="1mo")
+        if mo is None or len(mo) < 15:
+            return None
+        mo_rsi = safe_float(calc_rsi(mo["Close"], 14).iloc[-1])
+        if not (mo_rsi > 60):
+            return None
+        # Price to Book > 1 - Yahoo se try karo, nahi mila toh skip (fail mat karo)
+        pb = 0
+        try:
+            ticker = yf.Ticker(symbol + ".NS")
+            info = ticker.info
+            pb = safe_float(info.get("priceToBook", 0))
+        except Exception:
+            pb = 0
+        if pb > 0 and not (pb > 1):
+            return None
+        # Entry / SL / Target - PROXY AVWP is breakout, isliye SL thoda tight
+        atr = safe_float(calc_atr(df_d).iloc[-1])
+        cmp_ = close
+        entry_low = round(cmp_ * 0.998, 2)
+        entry_high = round(cmp_, 2)
+        # SL: Prev Day Low ke neeche ya 1% - jo bada ho
+        prev_low = safe_float(df_d["Low"].iloc[-2])
+        sl_by_low = round(prev_low * 0.996, 2)
+        sl_by_pct = round(cmp_ * 0.99, 2)
+        sl = round(min(sl_by_low, sl_by_pct), 2)
+        if sl % 1 == 0:
+            sl -= 0.30
+        risk = entry_high - sl
+        if risk <= 0:
+            risk = round(cmp_ * 0.01, 2)
+            sl = round(cmp_ - risk, 2)
+        t1 = round(entry_high + risk * 1.5, 2)
+        t2 = round(entry_high + risk * 2.5, 2)
+        sl_pct = round(risk / entry_high * 100, 2)
+        # Score: Volume + RSI jitna strong, utna score zyada
+        vol_ratio = round(vol / vol_sma20, 2) if vol_sma20 > 0 else 0
+        score = 75
+        if vol_ratio > 2.0:
+            score += 10
+        elif vol_ratio > 1.5:
+            score += 5
+        if rsi9 > 65:
+            score += 5
+        if rsi9 > 70:
+            score += 5
+        if mo_rsi > 70:
+            score += 5
+        prob = min(95, score)
+        win = min(92, 65 + (score - 75) * 1.0)
+        return {"symbol": symbol, "strategy": "PROXY AVWP", "cmp": round(cmp_, 2), "entry_low": entry_low, "entry_high": entry_high, "sl": sl, "t1": t1, "t2": t2, "sl_pct": sl_pct, "risk": round(risk, 2), "score": score, "prob": prob, "win": win, "rsi9": round(rsi9, 1), "monthly_rsi": round(mo_rsi, 1), "ema20": round(ema20, 2), "ema50": round(ema50, 2), "vol_ratio": vol_ratio, "pb": round(pb, 2), "prev_close": round(prev_close, 2), "high_1ago": round(high_1ago, 2), "high_5ago": round(high_5ago, 2), "atr": round(atr, 2)}
+    except Exception as e:
+        print(f"Proxy AVWP {symbol} err {e}")
         return None
 
 def get_market():
@@ -353,74 +402,108 @@ def send_telegram(msg):
         except Exception as e:
             print(f"Telegram send err {cid} {e}")
 
-def record_paper(symbol, r):
+def record_paper(symbol, r, bot_name):
     try:
         file_exists = os.path.exists(PAPER_FILE)
         with open(PAPER_FILE, "a", newline="") as f:
             w = csv.writer(f)
             if not file_exists:
                 w.writerow(["date", "bot", "symbol", "entry", "sl", "t1", "t2", "qty", "status", "exit_price", "pnl", "exit_reason"])
-            w.writerow([datetime.now(IST).strftime("%Y-%m-%d"), "BALA_FRESH_CROSS", symbol, r["entry_high"], round(r["sl"] * 0.995), r["t1"], r["t2"], PAPER_QTY, "OPEN", "", "", ""])
-        print(f"Paper recorded FRESH CROSS {symbol}")
+            w.writerow([datetime.now(IST).strftime("%Y-%m-%d"), bot_name, symbol, r["entry_high"], round(r["sl"] * 0.995), r["t1"], r["t2"], PAPER_QTY, "OPEN", "", "", ""])
+        print(f"Paper recorded {bot_name} {symbol}")
     except Exception as e:
         print(f"Paper record err {e}")
 
-def build_msg(market, results):
+def build_msg(market, fresh_list, proxy_list):
     now_str = datetime.now(IST).strftime("%d-%m %I:%M %p IST")
     data_src = "Upstox Live" if UPSTOX_ENABLED else "Yahoo Fallback"
-    msg = f"BALA FRESH CROSS V1.0 - {now_str}\nData: {data_src}\n"
+    msg = f"BALA FRESH + PROXY AVWP V1.1 - {now_str}\nData: {data_src}\n"
     msg += f"Market: Nifty:{market['nifty']:.0f} RSI:{market['rsi']:.0f}\n"
-    msg += f"Scan:{len(results)}/{len(NIFTY500)} passed ALL 3 rules\n\n"
-    msg += "RULES:\nMonthly EMA8>EMA20 + RSI>60\nWeekly Close>EMA20, <=EMA20x1.03, >Open, >Prev Close\n15m EMA200>EMA400 NOW + EMA200<=EMA400 1 candle ago = FRESH CROSS\n\n"
-    if len(results) == 0:
-        msg += "No stocks today - Fresh Cross bahut rare hai.\n"
-        msg += "Kal fir check karo. Aaj koi Fresh Cross nahi bana toh NO TRADE - chase mat karo.\n"
-        msg += "\nPAPER ONLY: No real order.\n"
-        return msg
-    msg += f"TOP {min(len(results), 5)} - FRESH CROSS - PAPER ONLY\n\n"
-    for i, r in enumerate(results[:5]):
-        sl_gtt = round(r["sl"] * 0.995)
-        msg += f"{i+1}. {r['symbol']} CMP:{r['cmp']:.0f} Score:{r['score']:.0f} P:{r['prob']:.0f}% W:{r['win']:.0f}% 🔥 FRESH CROSS 15m\n"
-        msg += f"   Entry:{r['entry_low']:.0f}-{r['entry_high']:.0f} SL:{r['sl']:.0f} ({r['sl_pct']:.1f}%) T1:{r['t1']:.0f} T2:{r['t2']:.0f}\n"
-        msg += f"   Monthly: EMA8 {r['monthly_ema8']:.0f} > EMA20 {r['monthly_ema20']:.0f} RSI {r['monthly_rsi']:.0f}\n"
-        msg += f"   Weekly: Close {r['weekly_close']:.0f} > EMA20 {r['weekly_ema20']:.0f} ({r['dist_weekly_pct']:.1f}% upar) > Open {r['weekly_open']:.0f} > Prev {r['weekly_prev_close']:.0f}\n"
-        msg += f"   15m: EMA200 Now {r['e200_now']:.0f} > EMA400 {r['e400_now']:.0f} | Prev EMA200 {r['e200_prev']:.0f} <= EMA400 {r['e400_prev']:.0f} = FRESH\n"
-        msg += f"   PAPER GTT: SL GTT {sl_gtt:.0f} (100%) | T1 GTT {r['t1']:.0f} (50%) | T2 GTT {r['t2']:.0f} (50%) | Trail SL->Entry after T1 | Qty {PAPER_QTY} VIRTUAL\n\n"
-    msg += "Rule: Entry CMP ke paas hi lo. SL Weekly EMA20 break hai - uske neeche close aaye toh exit. T1 pe 50% book, SL to Entry. Swing: Hold till T2.\nPAPER ONLY: No real GTT placed. Bot tracks virtually.\n"
+    msg += f"Scan:{len(NIFTY500)} | Fresh Cross:{len(fresh_list)} | Proxy AVWP:{len(proxy_list)}\n\n"
+    # --- PART 1: FRESH CROSS ---
+    msg += "=== 1. BALA FRESH CROSS 🔥 ===\n"
+    msg += "Monthly EMA8>EMA20 + RSI>60 | Weekly Close>EMA20 <=EMA20x1.03 >Open >Prev | 15m EMA200>EMA400 FRESH\n\n"
+    if len(fresh_list) == 0:
+        msg += "No Fresh Cross today - Fresh Cross rare hai, NO TRADE - chase mat karo.\n\n"
+    else:
+        for i, r in enumerate(fresh_list[:5]):
+            sl_gtt = round(r["sl"] * 0.995)
+            msg += f"{i+1}. {r['symbol']} CMP:{r['cmp']:.0f} Score:{r['score']:.0f} P:{r['prob']:.0f}% W:{r['win']:.0f}% 🔥 FRESH CROSS 15m\n"
+            msg += f"   Entry:{r['entry_low']:.0f}-{r['entry_high']:.0f} SL:{r['sl']:.0f} ({r['sl_pct']:.1f}%) T1:{r['t1']:.0f} T2:{r['t2']:.0f}\n"
+            msg += f"   Monthly: EMA8 {r['monthly_ema8']:.0f} > EMA20 {r['monthly_ema20']:.0f} RSI {r['monthly_rsi']:.0f}\n"
+            msg += f"   Weekly: Close {r['weekly_close']:.0f} > EMA20 {r['weekly_ema20']:.0f} ({r['dist_weekly_pct']:.1f}% upar) > Open {r['weekly_open']:.0f} > Prev {r['weekly_prev_close']:.0f}\n"
+            msg += f"   15m: EMA200 Now {r['e200_now']:.0f} > EMA400 {r['e400_now']:.0f} | Prev EMA200 {r['e200_prev']:.0f} <= EMA400 {r['e400_prev']:.0f} = FRESH\n"
+            msg += f"   PAPER GTT: SL {sl_gtt:.0f} | T1 {r['t1']:.0f} 50% | T2 {r['t2']:.0f} 50% | Qty {PAPER_QTY} VIRTUAL\n\n"
+    # --- PART 2: PROXY AVWP ---
+    msg += "=== 2. PROXY AVWP 📈 ===\n"
+    msg += "Daily Close > 1D High + 5D High + EMA20 > EMA50 + Vol 1.5x + RSI9>55 + Close>100 + Monthly RSI>60 + P/B>1\n\n"
+    if len(proxy_list) == 0:
+        msg += "No Proxy AVWP today - Breakout nahi bana.\n\n"
+    else:
+        for i, r in enumerate(proxy_list[:5]):
+            sl_gtt = round(r["sl"] * 0.995)
+            msg += f"{i+1}. {r['symbol']} CMP:{r['cmp']:.0f} Score:{r['score']:.0f} P:{r['prob']:.0f}% W:{r['win']:.0f}% 📈 PROXY AVWP\n"
+            msg += f"   Entry:{r['entry_low']:.0f}-{r['entry_high']:.0f} SL:{r['sl']:.0f} ({r['sl_pct']:.1f}%) T1:{r['t1']:.0f} T2:{r['t2']:.0f}\n"
+            msg += f"   Daily: Close {r['cmp']:.0f} > 1D High {r['high_1ago']:.0f} > 5D High {r['high_5ago']:.0f} | EMA20 {r['ema20']:.0f} > EMA50 {r['ema50']:.0f} | RSI9 {r['rsi9']:.0f} | Vol {r['vol_ratio']:.1f}x | Monthly RSI {r['monthly_rsi']:.0f} | P/B {r['pb']:.1f}\n"
+            msg += f"   PAPER GTT: SL {sl_gtt:.0f} | T1 {r['t1']:.0f} 50% | T2 {r['t2']:.0f} 50% | Qty {PAPER_QTY} VIRTUAL\n\n"
+    # --- OVERLAP ---
+    fresh_syms = set([x["symbol"] for x in fresh_list])
+    proxy_syms = set([x["symbol"] for x in proxy_list])
+    overlap = fresh_syms & proxy_syms
+    if overlap:
+        msg += f"⭐⭐ DOUBLE CONFIRM - Dono me aaya: {', '.join(list(overlap))} - Ye sabse strong hai, ispe zyada focus karo\n\n"
+    msg += "Rule: Entry CMP ke paas hi lo. T1 pe 50% book, SL to Entry. Swing: Hold till T2.\nPAPER ONLY: No real GTT placed.\n"
     return msg
 
 def main():
     now_ist = datetime.now(IST)
-    print(f"BALA FRESH CROSS V1.0 Start {now_ist.strftime('%d-%m-%Y %H:%M %A IST')} Scan:{len(NIFTY500)}")
+    print(f"BALA FRESH + PROXY V1.1 Start {now_ist.strftime('%d-%m-%Y %H:%M %A IST')} Scan:{len(NIFTY500)}")
     try:
         market = get_market()
-        results = []
-        # Parallel scan - 10 workers, fast
+        fresh_list = []
+        proxy_list = []
         with ThreadPoolExecutor(max_workers=10) as ex:
-            futs = {ex.submit(check_fresh_cross_strategy, sym): sym for sym in NIFTY500}
-            for fut in futs:
+            futs_fresh = {ex.submit(check_fresh_cross_strategy, sym): sym for sym in NIFTY500}
+            for fut in futs_fresh:
                 try:
                     r = fut.result()
                     if r:
-                        results.append(r)
-                        print(f"  ✅ PASS {r['symbol']} CMP {r['cmp']} Monthly RSI {r['monthly_rsi']} Weekly EMA20 {r['weekly_ema20']} 15m {r['e200_now']} > {r['e400_now']}")
+                        fresh_list.append(r)
+                        print(f"  ✅ FRESH PASS {r['symbol']} CMP {r['cmp']}")
                 except Exception as e:
-                    print(f"Scan err {futs[fut]} {e}")
-        results = sorted(results, key=lambda x: x["score"], reverse=True)
-        print(f"Fresh Cross PASS: {len(results)} / {len(NIFTY500)}")
-        for r in results[:5]:
+                    print(f"Fresh scan err {futs_fresh[fut]} {e}")
+        print(f"Fresh Cross done: {len(fresh_list)} - Now Proxy AVWP scan...")
+        with ThreadPoolExecutor(max_workers=10) as ex:
+            futs_proxy = {ex.submit(check_proxy_avwp_strategy, sym): sym for sym in NIFTY500}
+            for fut in futs_proxy:
+                try:
+                    r = fut.result()
+                    if r:
+                        proxy_list.append(r)
+                        print(f"  ✅ PROXY PASS {r['symbol']} CMP {r['cmp']} RSI9 {r['rsi9']} Vol {r['vol_ratio']}x")
+                except Exception as e:
+                    print(f"Proxy scan err {futs_proxy[fut]} {e}")
+        fresh_list = sorted(fresh_list, key=lambda x: x["score"], reverse=True)
+        proxy_list = sorted(proxy_list, key=lambda x: x["score"], reverse=True)
+        print(f"PASS: Fresh {len(fresh_list)} / Proxy {len(proxy_list)}")
+        for r in fresh_list[:5]:
             try:
-                record_paper(r["symbol"], r)
+                record_paper(r["symbol"], r, "BALA_FRESH_CROSS")
             except Exception as e:
                 print(f"Paper skip {e}")
-        msg = build_msg(market, results)
+        for r in proxy_list[:5]:
+            try:
+                record_paper(r["symbol"], r, "PROXY_AVWP")
+            except Exception as e:
+                print(f"Paper skip {e}")
+        msg = build_msg(market, fresh_list, proxy_list)
         send_telegram(msg)
-        print("BALA FRESH CROSS V1.0 Done")
+        print("BALA FRESH + PROXY V1.1 Done")
     except Exception as e:
-        print(f"FRESH CROSS CRASH {e}")
+        print(f"V1.1 CRASH {e}")
         traceback.print_exc()
         try:
-            send_telegram(f"BALA FRESH CROSS V1.0 CRASHED: {e} Time: {now_ist}")
+            send_telegram(f"BALA FRESH + PROXY V1.1 CRASHED: {e} Time: {now_ist}")
         except Exception:
             pass
 
