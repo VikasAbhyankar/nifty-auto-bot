@@ -1,0 +1,55 @@
+# BALA FRESH CROSS V1.0 - SEPARATE WORKFLOW - ONLY THIS STRATEGY
+# File: .github/workflows/bala-fresh-cross.yml
+# Strategy: Monthly EMA8>EMA20 + RSI>60
+#           Weekly Close>EMA20, <=EMA20x1.03, >Open, >Prev Close
+#           15m EMA200>EMA400 NOW + EMA200<=EMA400 1 candle ago = FRESH CROSS
+# PAPER ONLY - No live order
+name: Bala Fresh Cross V1.0 - Separate
+
+on:
+  schedule:
+    # 9:58 AM IST = 04:28 UTC (Mon-Fri) - Bot 1 (9:55) ke 3 min baad, taaki load na pade
+    - cron: '28 4 * * 1-5'
+  workflow_dispatch:
+    inputs:
+      note:
+        description: 'Manual run - Fresh Cross only'
+        required: false
+        default: 'Run Fresh Cross now'
+
+permissions:
+  contents: read
+
+jobs:
+  fresh-cross:
+    name: Bala Fresh Cross V1.0
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install yfinance pandas numpy requests pytz
+
+      - name: Check file exists
+        run: |
+          ls -lh bala_fresh_cross.py
+          python -m py_compile bala_fresh_cross.py && echo "Fresh Cross Syntax OK"
+
+      - name: Run Bala Fresh Cross V1.0
+        run: python bala_fresh_cross.py
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_FNO_BOT_TOKEN: ${{ secrets.TELEGRAM_FNO_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_FNO_CHAT_ID: ${{ secrets.TELEGRAM_FNO_CHAT_ID }}
+          UPSTOX_ACCESS_TOKEN: ${{ secrets.UPSTOX_ACCESS_TOKEN }}
+          UPSTOX_TOKEN_EXPIRY: ${{ secrets.UPSTOX_TOKEN_EXPIRY }}
