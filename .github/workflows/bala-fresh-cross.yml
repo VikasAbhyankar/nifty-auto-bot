@@ -1,28 +1,36 @@
-# BALA FRESH CROSS V1.0 - SEPARATE WORKFLOW - ONLY THIS STRATEGY
-# File: .github/workflows/bala-fresh-cross.yml
-# Strategy: Monthly EMA8>EMA20 + RSI>60
-#           Weekly Close>EMA20, <=EMA20x1.03, >Open, >Prev Close
-#           15m EMA200>EMA400 NOW + EMA200<=EMA400 1 candle ago = FRESH CROSS
-# PAPER ONLY - No live order
-name: Bala Fresh Cross V1.0 - Separate
+# BALA V1.2 - SEPARATE WORKFLOW - START 9:30 AM + EVERY 15 MIN
+# 9:30 AM = FULL SCAN (Fresh + Ret-200 + Proxy)
+# Har 15 min 9:45 se 3:00 tak = QUICK SCAN (Fresh + Ret only, naya signal mile toh hi Telegram)
+name: Bala V1.2 - 9:30 AM + 15 Min
 
 on:
   schedule:
-    # 9:58 AM IST = 04:28 UTC (Mon-Fri) - Bot 1 (9:55) ke 3 min baad, taaki load na pade
-    - cron: '28 4 * * 1-5'
+    # 9:30 AM IST = 04:00 UTC (Mon-Fri) - FULL
+    - cron: '0 4 * * 1-5'
+    # Har 15 min - 9:45 AM to 3:00 PM IST = 04:15 to 09:30 UTC - QUICK
+    - cron: '15,30,45 4 * * 1-5'
+    - cron: '0,15,30,45 5 * * 1-5'
+    - cron: '0,15,30,45 6 * * 1-5'
+    - cron: '0,15,30,45 7 * * 1-5'
+    - cron: '0,15,30,45 8 * * 1-5'
+    - cron: '0,15,30 9 * * 1-5'
   workflow_dispatch:
     inputs:
-      note:
-        description: 'Manual run - Fresh Cross only'
+      mode:
+        description: 'full = Full Scan (Fresh+Ret+Proxy) / quick = Quick Scan (Fresh+Ret only)'
         required: false
-        default: 'Run Fresh Cross now'
+        default: 'full'
+        type: choice
+        options:
+          - full
+          - quick
 
 permissions:
   contents: read
 
 jobs:
-  fresh-cross:
-    name: Bala Fresh Cross V1.0
+  bala-v12:
+    name: Bala V1.2
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -32,7 +40,6 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-    
 
       - name: Install dependencies
         run: |
@@ -42,10 +49,22 @@ jobs:
       - name: Check file exists
         run: |
           ls -lh bala_fresh_cross.py
-          python -m py_compile bala_fresh_cross.py && echo "Fresh Cross Syntax OK"
+          python -m py_compile bala_fresh_cross.py && echo "V1.2 Syntax OK"
 
-      - name: Run Bala Fresh Cross V1.0
-        run: python bala_fresh_cross.py
+      - name: Run Bala V1.2 - Auto Mode
+        if: github.event_name == 'schedule'
+        run: python bala_fresh_cross.py --mode auto
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_FNO_BOT_TOKEN: ${{ secrets.TELEGRAM_FNO_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_FNO_CHAT_ID: ${{ secrets.TELEGRAM_FNO_CHAT_ID }}
+          UPSTOX_ACCESS_TOKEN: ${{ secrets.UPSTOX_ACCESS_TOKEN }}
+          UPSTOX_TOKEN_EXPIRY: ${{ secrets.UPSTOX_TOKEN_EXPIRY }}
+
+      - name: Run Bala V1.2 - Manual Mode
+        if: github.event_name == 'workflow_dispatch'
+        run: python bala_fresh_cross.py --mode ${{ github.event.inputs.mode }}
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_FNO_BOT_TOKEN: ${{ secrets.TELEGRAM_FNO_BOT_TOKEN }}
