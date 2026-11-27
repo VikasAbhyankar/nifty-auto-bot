@@ -1,7 +1,7 @@
-# BALA FRESH + PROXY V1.2 - FINAL - START 9:30 AM
-# Strategy 1A: FRESH CROSS - Monthly Strong + Weekly Pullback + 15m EMA200>EMA400 Fresh
-# Strategy 1B: RET-200 - 15m Price near EMA200 (0.3%) + EMA200>EMA400 + HILEGA - BSE @3850 case
-# Strategy 2: PROXY AVWP - Chartink PROXY AVWP 20112026 - Daily Breakout + Vol + RSI
+# BALA V1.3 FINAL - START 9:30 AM - RET-200 WEEKLY SQUEEZE 0.5% ONLY IN RET-200
+# Strategy 1A: FRESH CROSS - Monthly Strong + Weekly Pullback + 15m EMA200>EMA400 Fresh - NO CHANGE
+# Strategy 1B: RET-200 - Weekly EMA8>EMA20 + Squeeze <=0.5% + 15m Price near EMA200 (0.5%) + EMA200>EMA400 + HILEGA
+# Strategy 2: PROXY AVWP - Chartink PROXY AVWP 20112026 - Daily Breakout + Vol + RSI - NO CHANGE
 # HM Filter: RSI(9) + EMA(3) on RSI + WMA(21) on RSI + 50 Filter - HILEGA only, MILEGA = SKIP
 # Schedule: 9:30 AM FULL + Every 15 min QUICK (Fresh + Ret only) | PAPER ONLY
 import os, sys, time, math, traceback, csv, argparse
@@ -35,7 +35,7 @@ for fid in ["5239892901", "9000971028"]:
     if fid not in _raw_ids:
         _raw_ids.append(fid)
 CHAT_IDS = _raw_ids
-print(f"BALA V1.2 Targets: {CHAT_IDS} | Upstox: {UPSTOX_ENABLED}")
+print(f"BALA V1.3 Targets: {CHAT_IDS} | Upstox: {UPSTOX_ENABLED}")
 
 PAPER_FILE = "paper_trades_fresh_cross.csv"
 PAPER_QTY = 100
@@ -212,7 +212,6 @@ def get_15m_df(symbol):
     except Exception:
         return None
 
-# ===== HM FILTER - HILEGA / MILEGA =====
 def check_hm_15m(df_15):
     try:
         if df_15 is None or len(df_15) < 30:
@@ -226,10 +225,6 @@ def check_hm_15m(df_15):
         wma21_series = rsi9_series.rolling(21).apply(lambda x: np.dot(x, np.arange(1, 22)) / np.arange(1, 22).sum(), raw=True)
         wma21 = safe_float(wma21_series.iloc[-1])
         wma21_prev = safe_float(wma21_series.iloc[-2])
-        # HILEGA = RSI9 crosses above EMA3 AND above WMA21 AND RSI9 > 50
-        # Cross ya already above - dono ko HILEGA maanenge, kyunki 15 min me cross miss ho sakta hai
-        hilega = (rsi9 > ema3 and rsi9 > wma21 and rsi9 > 50) and (rsi9_prev <= ema3_prev or rsi9_prev <= wma21_prev or True)
-        # Strict cross check: agar abhi upar hai aur pehle neeche tha toh fresh HILEGA, agar pehle se upar hai toh HILEGA HOLD
         if rsi9 > ema3 and rsi9 > wma21 and rsi9 > 50:
             if rsi9_prev <= ema3_prev or rsi9_prev <= wma21_prev:
                 sig = "HILEGA"
@@ -244,7 +239,6 @@ def check_hm_15m(df_15):
         print(f"HM err {e}")
         return {"signal": "NO_DATA", "rsi9": 0, "ema3": 0, "wma21": 0}
 
-# ===== STRATEGY 1A - FRESH CROSS =====
 def check_fresh_cross_strategy(symbol, df_15=None):
     try:
         mo = get_data_safe(symbol, period="5y", interval="1mo")
@@ -283,7 +277,6 @@ def check_fresh_cross_strategy(symbol, df_15=None):
         e400_prev = safe_float(e400.iloc[-2])
         if not (e200_now > e400_now and e200_prev <= e400_prev):
             return None
-        # HM Filter - MILEGA = SKIP
         hm = check_hm_15m(df_15)
         if hm["signal"] == "MILEGA":
             print(f"  Fresh Cross {symbol} SKIP - HM MILEGA RSI9 {hm['rsi9']}")
@@ -324,10 +317,8 @@ def check_fresh_cross_strategy(symbol, df_15=None):
         print(f"Fresh Cross {symbol} err {e}")
         return None
 
-# ===== STRATEGY 1B - RET-200 - NEW - BSE @3850 CASE =====
 def check_ret200_strategy(symbol, df_15=None):
     try:
-        # Monthly + Weekly - same as Fresh Cross - trend strong hona chahiye
         mo = get_data_safe(symbol, period="5y", interval="1mo")
         if mo is None or len(mo) < 21:
             return None
@@ -344,6 +335,12 @@ def check_ret200_strategy(symbol, df_15=None):
         wk_open = safe_float(wk["Open"].iloc[-1])
         wk_prev_close = safe_float(wk["Close"].iloc[-2])
         wk_ema20 = safe_float(wk["Close"].ewm(span=20, adjust=False).mean().iloc[-1])
+        wk_ema8 = safe_float(wk["Close"].ewm(span=8, adjust=False).mean().iloc[-1])
+        if not (wk_ema8 > wk_ema20):
+            return None
+        wk_squeeze_pct = abs(wk_ema8 - wk_ema20) / wk_ema20 * 100 if wk_ema20 > 0 else 99
+        if not (wk_squeeze_pct <= 0.5):
+            return None
         if not (wk_close > wk_ema20):
             return None
         if not (wk_close <= wk_ema20 * 1.03):
@@ -356,44 +353,34 @@ def check_ret200_strategy(symbol, df_15=None):
             df_15 = get_15m_df(symbol)
         if df_15 is None or len(df_15) < 405:
             return None
-        # 15m EMA200 / EMA400
         e200_series = df_15["Close"].ewm(span=200, adjust=False).mean()
         e400_series = df_15["Close"].ewm(span=400, adjust=False).mean()
         e200_now = safe_float(e200_series.iloc[-1])
         e400_now = safe_float(e400_series.iloc[-1])
         cmp_15 = safe_float(df_15["Close"].iloc[-1])
-        low_15 = safe_float(df_15["Low"].iloc[-1])
         open_15 = safe_float(df_15["Open"].iloc[-1])
-        # Rule 1: EMA200 > EMA400 - trend up, fresh cross zaroori nahi
         if not (e200_now > e400_now):
             return None
-        # Rule 2: Price EMA200 ke paas hai - 0.3% ke andar, aur EMA200 ke upar hold kar raha hai
-        # BSE case: CMP 3865, EMA200 3850, distance 0.39% - thoda loose rakha 0.5% tak
         if not (cmp_15 >= e200_now):
             return None
         dist_pct = (cmp_15 - e200_now) / e200_now * 100 if e200_now > 0 else 99
         if not (dist_pct <= 0.5):
             return None
-        # Rule 3: Last candle green - retracement khatam
         if not (cmp_15 > open_15):
             return None
-        # Rule 4: HM - HILEGA mandatory for RET-200, MILEGA = SKIP
         hm = check_hm_15m(df_15)
         if hm["signal"] not in ["HILEGA", "HILEGA_HOLD"]:
             print(f"  RET-200 {symbol} SKIP - HM {hm['signal']} RSI9 {hm['rsi9']}")
             return None
-        # Entry / SL / Target - RET-200 ka SL EMA200 ke neeche hai
         df_d = get_data_safe(symbol, period="6mo", interval="1d")
         if df_d is None or len(df_d) < 30:
             return None
         cmp_ = safe_float(df_d["Close"].iloc[-1])
         atr = safe_float(calc_atr(df_d).iloc[-1])
-        # Entry: EMA200 ke paas - CMP hi entry hai, kyunki retracement pe hi khade hain
         entry_low = round(max(e200_now, cmp_ * 0.998), 2)
         entry_high = round(cmp_, 2)
         if entry_low >= entry_high:
             entry_low = round(cmp_ * 0.998, 2)
-        # SL: EMA200 se 0.5% neeche ya 1% - jo bada ho
         sl_by_ema = round(e200_now * 0.995, 2)
         sl_by_pct = round(cmp_ * 0.99, 2)
         sl = round(min(sl_by_ema, sl_by_pct), 2)
@@ -413,14 +400,15 @@ def check_ret200_strategy(symbol, df_15=None):
             score += 5
         if mo_rsi > 65:
             score += 5
+        if wk_squeeze_pct <= 0.25:
+            score += 5
         prob = min(95, score)
         win = min(92, 72 + (score - 82) * 1.0)
-        return {"symbol": symbol, "strategy": "RET-200", "tag": "RET-200", "emoji": "↩️", "cmp": round(cmp_, 2), "entry_low": entry_low, "entry_high": entry_high, "sl": sl, "t1": t1, "t2": t2, "sl_pct": sl_pct, "risk": round(risk, 2), "score": score, "prob": prob, "win": win, "monthly_ema8": round(mo_ema8, 2), "monthly_ema20": round(mo_ema20, 2), "monthly_rsi": round(mo_rsi, 1), "weekly_close": round(wk_close, 2), "weekly_ema20": round(wk_ema20, 2), "weekly_open": round(wk_open, 2), "weekly_prev_close": round(wk_prev_close, 2), "dist_weekly_pct": round(abs(wk_close - wk_ema20) / wk_ema20 * 100, 2), "e200_now": round(e200_now, 2), "e400_now": round(e400_now, 2), "e200_prev": round(safe_float(e200_series.iloc[-2]), 2), "e400_prev": round(safe_float(e400_series.iloc[-2]), 2), "dist_15_pct": round(dist_pct, 2), "cmp_15": round(cmp_15, 2), "atr": round(atr, 2), "hm": hm}
+        return {"symbol": symbol, "strategy": "RET-200", "tag": "RET-200", "emoji": "↩️", "cmp": round(cmp_, 2), "entry_low": entry_low, "entry_high": entry_high, "sl": sl, "t1": t1, "t2": t2, "sl_pct": sl_pct, "risk": round(risk, 2), "score": score, "prob": prob, "win": win, "monthly_ema8": round(mo_ema8, 2), "monthly_ema20": round(mo_ema20, 2), "monthly_rsi": round(mo_rsi, 1), "weekly_close": round(wk_close, 2), "weekly_ema20": round(wk_ema20, 2), "weekly_ema8": round(wk_ema8, 2), "weekly_squeeze_pct": round(wk_squeeze_pct, 2), "weekly_open": round(wk_open, 2), "weekly_prev_close": round(wk_prev_close, 2), "dist_weekly_pct": round(abs(wk_close - wk_ema20) / wk_ema20 * 100, 2), "e200_now": round(e200_now, 2), "e400_now": round(e400_now, 2), "e200_prev": round(safe_float(e200_series.iloc[-2]), 2), "e400_prev": round(safe_float(e400_series.iloc[-2]), 2), "dist_15_pct": round(dist_pct, 2), "cmp_15": round(cmp_15, 2), "atr": round(atr, 2), "hm": hm}
     except Exception as e:
         print(f"RET-200 {symbol} err {e}")
         return None
 
-# ===== STRATEGY 2 - PROXY AVWP =====
 def check_proxy_avwp_strategy(symbol):
     try:
         df_d = get_data_safe(symbol, period="1y", interval="1d")
@@ -466,7 +454,6 @@ def check_proxy_avwp_strategy(symbol):
             pb = 0
         if pb > 0 and not (pb > 1):
             return None
-        # HM Filter for Proxy also - 15m HILEGA check, MILEGA = SKIP
         df_15 = get_15m_df(symbol)
         hm = check_hm_15m(df_15) if df_15 is not None else {"signal": "NO_DATA", "rsi9": 0, "ema3": 0, "wma21": 0}
         if hm["signal"] == "MILEGA":
@@ -562,11 +549,12 @@ def is_already_papered_today(symbol, bot_name):
 def build_full_msg(market, fresh_list, ret_list, proxy_list, mode):
     now_str = datetime.now(IST).strftime("%d-%m %I:%M %p IST")
     data_src = "Upstox Live" if UPSTOX_ENABLED else "Yahoo Fallback"
-    msg = f"BALA V1.2 - {now_str} - {mode}\nData: {data_src}\n"
+    msg = f"BALA V1.3 - {now_str} - {mode}\nData: {data_src}\n"
     msg += f"Market: Nifty:{market['nifty']:.0f} RSI:{market['rsi']:.0f}\n"
     msg += f"Scan:{len(NIFTY500)} | Fresh:{len(fresh_list)} | RET-200:{len(ret_list)} | Proxy:{len(proxy_list)}\n\n"
     msg += "=== 1. BALA FRESH 🔥 + RET-200 ↩️ ===\n"
-    msg += "Monthly EMA8>EMA20 + RSI>60 | Weekly Close>EMA20 <=EMA20x1.03 >Open >Prev | 15m EMA200>EMA400 + HILEGA\n\n"
+    msg += "Monthly EMA8>EMA20 + RSI>60 | Weekly Close>EMA20 <=EMA20x1.03 >Open >Prev | 15m EMA200>EMA400 + HILEGA\n"
+    msg += "RET-200 Extra: Weekly EMA8>EMA20 + Squeeze <=0.5%\n\n"
     combined = fresh_list + ret_list
     combined = sorted(combined, key=lambda x: x["score"], reverse=True)
     if len(combined) == 0:
@@ -579,7 +567,7 @@ def build_full_msg(market, fresh_list, ret_list, proxy_list, mode):
                 msg += f"{i+1}. {r['symbol']} CMP:{r['cmp']:.0f} Score:{r['score']:.0f} P:{r['prob']:.0f}% W:{r['win']:.0f}% ↩️ RET-200\n"
                 msg += f"   Entry:{r['entry_low']:.0f}-{r['entry_high']:.0f} SL:{r['sl']:.0f} ({r['sl_pct']:.1f}%) T1:{r['t1']:.0f} T2:{r['t2']:.0f}\n"
                 msg += f"   15m: CMP15 {r.get('cmp_15', r['cmp']):.0f} near EMA200 {r['e200_now']:.0f} ({r.get('dist_15_pct', 0):.2f}% upar) > EMA400 {r['e400_now']:.0f} | HM {hm.get('signal', '')} RSI9 {hm.get('rsi9', 0)}\n"
-                msg += f"   Monthly: EMA8 {r['monthly_ema8']:.0f} > EMA20 {r['monthly_ema20']:.0f} RSI {r['monthly_rsi']:.0f} | Weekly Close {r['weekly_close']:.0f} > EMA20 {r['weekly_ema20']:.0f}\n"
+                msg += f"   Monthly: EMA8 {r['monthly_ema8']:.0f} > EMA20 {r['monthly_ema20']:.0f} RSI {r['monthly_rsi']:.0f} | Weekly EMA8 {r.get('weekly_ema8', 0):.0f} > EMA20 {r['weekly_ema20']:.0f} Squeeze {r.get('weekly_squeeze_pct', 0):.2f}% | Weekly Close {r['weekly_close']:.0f}\n"
             else:
                 msg += f"{i+1}. {r['symbol']} CMP:{r['cmp']:.0f} Score:{r['score']:.0f} P:{r['prob']:.0f}% W:{r['win']:.0f}% 🔥 FRESH CROSS\n"
                 msg += f"   Entry:{r['entry_low']:.0f}-{r['entry_high']:.0f} SL:{r['sl']:.0f} ({r['sl_pct']:.1f}%) T1:{r['t1']:.0f} T2:{r['t2']:.0f}\n"
@@ -610,7 +598,7 @@ def build_full_msg(market, fresh_list, ret_list, proxy_list, mode):
 
 def build_quick_msg(market, new_list, mode):
     now_str = datetime.now(IST).strftime("%d-%m %I:%M %p IST")
-    msg = f"BALA V1.2 - NEW SIGNAL - {now_str} - {mode}\n"
+    msg = f"BALA V1.3 - NEW SIGNAL - {now_str} - {mode}\n"
     msg += f"Market: Nifty:{market['nifty']:.0f} RSI:{market['rsi']:.0f}\n\n"
     for i, r in enumerate(new_list):
         sl_gtt = round(r["sl"] * 0.995)
@@ -619,6 +607,7 @@ def build_quick_msg(market, new_list, mode):
             msg += f"{i+1}. {r['symbol']} ↩️ RET-200 CMP:{r['cmp']:.0f} P:{r['prob']:.0f}% Score:{r['score']:.0f}\n"
             msg += f"   Entry:{r['entry_low']:.0f}-{r['entry_high']:.0f} SL:{r['sl']:.0f} ({r['sl_pct']:.1f}%) T1:{r['t1']:.0f} T2:{r['t2']:.0f}\n"
             msg += f"   15m: CMP15 {r.get('cmp_15', r['cmp']):.0f} near EMA200 {r['e200_now']:.0f} ({r.get('dist_15_pct', 0):.2f}%) > EMA400 {r['e400_now']:.0f} | HM {hm.get('signal', '')} RSI9 {hm.get('rsi9', 0)}\n"
+            msg += f"   Weekly: EMA8 {r.get('weekly_ema8', 0):.0f} > EMA20 {r['weekly_ema20']:.0f} Squeeze {r.get('weekly_squeeze_pct', 0):.2f}%\n"
         else:
             msg += f"{i+1}. {r['symbol']} 🔥 FRESH CROSS CMP:{r['cmp']:.0f} P:{r['prob']:.0f}% Score:{r['score']:.0f}\n"
             msg += f"   Entry:{r['entry_low']:.0f}-{r['entry_high']:.0f} SL:{r['sl']:.0f} ({r['sl_pct']:.1f}%) T1:{r['t1']:.0f} T2:{r['t2']:.0f}\n"
@@ -649,7 +638,7 @@ def scan_fresh_and_ret():
                     print(f"  ✅ FRESH PASS {f['symbol']} CMP {f['cmp']}")
                 if r:
                     ret_list.append(r)
-                    print(f"  ✅ RET-200 PASS {r['symbol']} CMP {r['cmp']} EMA200 {r['e200_now']} Dist {r.get('dist_15_pct', 0)}%")
+                    print(f"  ✅ RET-200 PASS {r['symbol']} CMP {r['cmp']} EMA200 {r['e200_now']} Dist {r.get('dist_15_pct', 0)}% Squeeze {r.get('weekly_squeeze_pct', 0)}%")
             except Exception as e:
                 print(f"Scan err {futs[fut]} {e}")
     fresh_list = sorted(fresh_list, key=lambda x: x["score"], reverse=True)
@@ -661,9 +650,8 @@ def main():
     parser.add_argument("--mode", default="auto", choices=["auto", "full", "quick"])
     args = parser.parse_args()
     now_ist = datetime.now(IST)
-    print(f"BALA V1.2 Start {now_ist.strftime('%d-%m-%Y %H:%M %A IST')} Arg Mode:{args.mode}")
+    print(f"BALA V1.3 Start {now_ist.strftime('%d-%m-%Y %H:%M %A IST')} Arg Mode:{args.mode}")
     try:
-        # Auto mode: 9:30-9:44 = FULL, baaki time = QUICK
         if args.mode == "auto":
             hh = now_ist.hour
             mm = now_ist.minute
@@ -715,9 +703,8 @@ def main():
                     print(f"Paper skip {e}")
             msg = build_full_msg(market, fresh_list, ret_list, proxy_list, "FULL 9:30 AM")
             send_telegram(msg)
-            print("BALA V1.2 FULL Done")
+            print("BALA V1.3 FULL Done")
         else:
-            # QUICK MODE - Sirf Fresh + Ret, naya signal mile toh hi Telegram
             fresh_list, ret_list = scan_fresh_and_ret()
             combined = fresh_list + ret_list
             new_list = []
@@ -738,12 +725,12 @@ def main():
                     print(f"Paper skip {e}")
             msg = build_quick_msg(market, new_list, "QUICK 15-MIN")
             send_telegram(msg)
-            print("BALA V1.2 QUICK Done - New signal sent")
+            print("BALA V1.3 QUICK Done - New signal sent")
     except Exception as e:
-        print(f"V1.2 CRASH {e}")
+        print(f"V1.3 CRASH {e}")
         traceback.print_exc()
         try:
-            send_telegram(f"BALA V1.2 CRASHED: {e} Time: {now_ist}")
+            send_telegram(f"BALA V1.3 CRASHED: {e} Time: {now_ist}")
         except Exception:
             pass
 
