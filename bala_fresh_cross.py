@@ -1,9 +1,11 @@
-# BALA V1.5 FINAL - 9:20 PRE + CORRECT TIME + CORRECT DATA
+# BALA V1.5.1 FINAL - 9:20 PRE + CORRECT TIME + CORRECT DATA + MANUAL NO TELEGRAM
 # 9:20 PRE: Daily+Weekly only - Watchlist
 # 9:30 FULL: Fresh + RET-200 + Proxy - 15m confirm
 # RET-200: Weekly EMA8>EMA20 Squeeze <=0.5% ONLY IN RET-200
 # TIME: SCAN START + SENT TIME + Run # - Sabhi msg me
 # DATA: Upstox Live check + Stale 15m SKIP + Live CMP
+# MANUAL: SEND_TELEGRAM=false ho toh Telegram nahi jayega, sirf log me print hoga
+# QUICK: No new signal ho toh bhi khaali msg jayega
 # Nifty500 only - No ETF, P/B NO CHANGE
 import os, sys, time, math, traceback, csv, argparse
 from datetime import datetime, timedelta, timezone
@@ -25,7 +27,7 @@ UPSTOX_TOKEN = os.getenv("UPSTOX_ACCESS_TOKEN", "")
 UPSTOX_ENABLED = bool(UPSTOX_TOKEN)
 UPSTOX_BASE = "https://api.upstox.com/v3"
 
-# ===== V1.5 TIMESTAMP - SCAN START CAPTURE =====
+# ===== V1.5.1 TIMESTAMP - SCAN START CAPTURE =====
 SCAN_START_TIME = datetime.now(IST)
 SCAN_START_STR = SCAN_START_TIME.strftime("%d-%m %I:%M:%S %p IST")
 GITHUB_RUN_ID = os.getenv("GITHUB_RUN_ID", "")
@@ -33,6 +35,9 @@ GITHUB_RUN_NUMBER = os.getenv("GITHUB_RUN_NUMBER", "")
 GITHUB_SHA = os.getenv("GITHUB_SHA", "")[:7] if os.getenv("GITHUB_SHA") else ""
 DATA_MODE = "Upstox Live" if UPSTOX_ENABLED else "Yahoo Fallback"
 DATA_LIVE_FLAG = True
+
+# ===== V1.5.1 MANUAL NO TELEGRAM =====
+SEND_TELEGRAM = os.getenv("SEND_TELEGRAM", "true").lower() not in ["false", "0", "no", "off"]
 
 def get_stamp():
     now = datetime.now(IST)
@@ -44,7 +49,7 @@ def get_stamp():
 def get_scan_header(mode_label):
     now, ts, run_txt, sha_txt = get_stamp()
     live_txt = "[LIVE]" if DATA_LIVE_FLAG else "[NOT LIVE] ⚠️"
-    return f"BALA V1.5 - SCAN: {SCAN_START_STR} | SENT: {ts} | {mode_label}{run_txt}{sha_txt}", live_txt
+    return f"BALA V1.5.1 - SCAN: {SCAN_START_STR} | SENT: {ts} | {mode_label}{run_txt}{sha_txt}", live_txt
 
 CHAT_IDS = []
 _raw_ids = []
@@ -57,7 +62,7 @@ for fid in ["5239892901", "9000971028"]:
     if fid not in _raw_ids:
         _raw_ids.append(fid)
 CHAT_IDS = _raw_ids
-print(f"BALA V1.5 Targets: {CHAT_IDS} | Upstox: {UPSTOX_ENABLED} | Run #{GITHUB_RUN_NUMBER} | SCAN START {SCAN_START_STR}")
+print(f"BALA V1.5.1 Targets: {CHAT_IDS} | Upstox: {UPSTOX_ENABLED} | Run #{GITHUB_RUN_NUMBER} | SCAN START {SCAN_START_STR} | SEND_TELEGRAM={SEND_TELEGRAM}")
 
 PAPER_FILE = "paper_trades_fresh_cross.csv"
 PAPER_QTY = 100
@@ -227,13 +232,13 @@ def get_15m_df(symbol):
         df = flatten_df(df)
         if df is None or len(df) < 50:
             return None
+        # V1.5.1 FIX - Timezone bug fix - dono ko naive karke minus karo
         try:
             last_ts = df.index[-1]
-            if last_ts.tzinfo is None:
-                last_ts = last_ts.tz_localize("UTC").tz_convert(IST)
-            else:
-                last_ts = last_ts.tz_convert(IST)
-            age_min = (datetime.now(IST) - last_ts.replace(tzinfo=None)).total_seconds() / 60
+            if last_ts.tzinfo is not None:
+                last_ts = last_ts.tz_convert(IST).replace(tzinfo=None)
+            now_naive = datetime.now(IST).replace(tzinfo=None)
+            age_min = (now_naive - last_ts).total_seconds() / 60
             now_ist = datetime.now(IST)
             is_market_hours = (9 <= now_ist.hour < 16)
             if is_market_hours and age_min > 25:
@@ -427,6 +432,11 @@ def get_market():
         return {"nifty": 0, "rsi": 50}
 
 def send_telegram(msg):
+    if not SEND_TELEGRAM:
+        print("=== TELEGRAM SKIPPED - MANUAL RUN ===")
+        print(msg[:2000])
+        print("=== END SKIPPED MSG ===")
+        return
     if not BOT_TOKEN:
         print("No BOT_TOKEN"); return
     for cid in CHAT_IDS:
@@ -526,6 +536,9 @@ def build_quick_msg(market, new_list, mode):
     header, live_txt = get_scan_header(mode)
     msg = f"{header}\nData: {DATA_MODE} {live_txt}\n"
     msg += f"Market: Nifty:{market['nifty']:.0f} RSI:{market['rsi']:.0f}\n\n"
+    if len(new_list) == 0:
+        msg += "QUICK: No new Fresh / RET-200 signal in last 15 min.\n\nPAPER ONLY\n"
+        return msg
     for i, r in enumerate(new_list):
         sl_gtt = round(r["sl"] * 0.995); hm = r.get("hm", {})
         if r["strategy"] == "RET-200":
@@ -577,7 +590,7 @@ def main():
     parser.add_argument("--mode", default="auto", choices=["auto", "full", "quick", "pre"])
     args = parser.parse_args()
     now_ist = datetime.now(IST)
-    print(f"BALA V1.5 Start {now_ist.strftime('%d-%m-%Y %H:%M %A IST')} Arg Mode:{args.mode} Run #{GITHUB_RUN_NUMBER} SCAN {SCAN_START_STR}")
+    print(f"BALA V1.5.1 Start {now_ist.strftime('%d-%m-%Y %H:%M %A IST')} Arg Mode:{args.mode} Run #{GITHUB_RUN_NUMBER} SCAN {SCAN_START_STR}")
     try:
         if args.mode == "auto":
             hh = now_ist.hour; mm = now_ist.minute
@@ -600,7 +613,7 @@ def main():
             print(f"PRE: {len(pre_list)} candidates")
             msg = build_pre_msg(market, pre_list, "PRE 9:20 AM")
             send_telegram(msg)
-            print("BALA V1.5 PRE Done")
+            print("BALA V1.5.1 PRE Done")
         elif mode == "full":
             fresh_list, ret_list = scan_fresh_and_ret()
             print(f"Full scan Fresh {len(fresh_list)} Ret {len(ret_list)} - Now Proxy...")
@@ -628,7 +641,7 @@ def main():
                 except Exception as e: print(f"Paper skip {e}")
             msg = build_full_msg(market, fresh_list, ret_list, proxy_list, "FULL 9:30 AM")
             send_telegram(msg)
-            print("BALA V1.5 FULL Done")
+            print("BALA V1.5.1 FULL Done")
         else:
             fresh_list, ret_list = scan_fresh_and_ret()
             combined = fresh_list + ret_list; new_list = []
@@ -637,7 +650,11 @@ def main():
                 if not is_already_papered_today(r["symbol"], bot_name): new_list.append(r)
             print(f"QUICK: Fresh {len(fresh_list)} Ret {len(ret_list)} New {len(new_list)}")
             if len(new_list) == 0:
-                print("QUICK: No new signal - Silent, no Telegram"); return
+                header_empty, live_txt_empty = get_scan_header("QUICK 15-MIN")
+                msg_empty = f"{header_empty}\nData: {DATA_MODE} {live_txt_empty}\nMarket: Nifty:{market['nifty']:.0f} RSI:{market['rsi']:.0f}\n\nQUICK: No new Fresh / RET-200 signal in last 15 min.\nFresh: {len(fresh_list)} Ret: {len(ret_list)}\n\nPAPER ONLY\n"
+                send_telegram(msg_empty)
+                print("QUICK: No new signal - Empty msg sent")
+                return
             new_list = sorted(new_list, key=lambda x: x["score"], reverse=True)[:5]
             for r in new_list:
                 try:
@@ -645,12 +662,12 @@ def main():
                 except Exception as e: print(f"Paper skip {e}")
             msg = build_quick_msg(market, new_list, "QUICK 15-MIN")
             send_telegram(msg)
-            print("BALA V1.5 QUICK Done - New signal sent")
+            print("BALA V1.5.1 QUICK Done - New signal sent")
     except Exception as e:
-        print(f"V1.5 CRASH {e}"); traceback.print_exc()
+        print(f"V1.5.1 CRASH {e}"); traceback.print_exc()
         try:
             header2, live_txt2 = get_scan_header("CRASH")
-            send_telegram(f"{header2}\nBALA V1.5 CRASHED: {e}")
+            send_telegram(f"{header2}\nBALA V1.5.1 CRASHED: {e}")
         except Exception: pass
 
 if __name__ == "__main__":
