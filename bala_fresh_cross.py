@@ -32,7 +32,7 @@ GITHUB_RUN_ID = os.getenv("GITHUB_RUN_ID", "")
 GITHUB_RUN_NUMBER = os.getenv("GITHUB_RUN_NUMBER", "")
 GITHUB_SHA = os.getenv("GITHUB_SHA", "")[:7] if os.getenv("GITHUB_SHA") else ""
 DATA_MODE = "Upstox Live" if UPSTOX_ENABLED else "Yahoo Fallback"
-DATA_LIVE_FLAG = True  # Agar koi bhi data stale mila toh False ho jayega
+DATA_LIVE_FLAG = True
 
 def get_stamp():
     now = datetime.now(IST)
@@ -203,13 +203,11 @@ def get_data_safe(symbol, period="1y", interval="1d"):
                 live = upstox_live_price(to_upstox_key(symbol))
                 if live and live > 0:
                     old_close = safe_float(df["Close"].iloc[-1])
-                    # V1.5 - Live price 5% se zyada alag hai toh data galat hai, live mat lagao
                     if abs(live - old_close) / old_close * 100 < 5:
                         df.loc[df.index[-1], "Close"] = live
             except Exception:
                 pass
             return flatten_df(df)
-    # V1.5 - Yahoo fallback pe gaya toh NOT LIVE mark karo
     DATA_LIVE_FLAG = False
     try:
         ticker = symbol if symbol.startswith("^") else symbol + ".NS"
@@ -229,7 +227,6 @@ def get_15m_df(symbol):
         df = flatten_df(df)
         if df is None or len(df) < 50:
             return None
-        # V1.5 - Last candle kitni purani hai? Market hours me 25 min se zyada purani toh STALE
         try:
             last_ts = df.index[-1]
             if last_ts.tzinfo is None:
@@ -239,7 +236,6 @@ def get_15m_df(symbol):
             age_min = (datetime.now(IST) - last_ts.replace(tzinfo=None)).total_seconds() / 60
             now_ist = datetime.now(IST)
             is_market_hours = (9 <= now_ist.hour < 16)
-            # Market band hone ke baad (3:30 ke baad) ye check skip - candle purani hi hogi
             if is_market_hours and age_min > 25:
                 print(f"  15m STALE {symbol} Age {age_min:.0f} min - SKIP")
                 DATA_LIVE_FLAG = False
