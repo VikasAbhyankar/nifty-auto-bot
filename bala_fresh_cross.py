@@ -1,12 +1,10 @@
-# BALA V1.5.1 FINAL - 9:20 PRE + CORRECT TIME + CORRECT DATA + MANUAL NO TELEGRAM
-# 9:20 PRE: Daily+Weekly only - Watchlist
-# 9:30 FULL: Fresh + RET-200 + Proxy - 15m confirm
-# RET-200: Weekly EMA8>EMA20 Squeeze <=0.5% ONLY IN RET-200
-# TIME: SCAN START + SENT TIME + Run # - Sabhi msg me
-# DATA: Upstox Live check + Stale 15m SKIP + Live CMP
-# MANUAL: SEND_TELEGRAM=false ho toh Telegram nahi jayega, sirf log me print hoga
-# QUICK: No new signal ho toh bhi khaali msg jayega
-# Nifty500 only - No ETF, P/B NO CHANGE
+# BALA V1.6 FINAL - FRESH CROSS 0.25% + RET-200 + PROXY + PRE 9:20
+# FRESH CROSS 0.25% RULE:
+# 1. Pichli Candle: EMA200 >= EMA400*0.9975 AND EMA200 <= EMA400 (0.25% niche se)
+# 2. Ab: EMA200 >= EMA400 (Cross ho gaya)
+# 3. Price: EMA200 ke 0.25% andar hai - Price >= EMA200*0.9975 AND Price <= EMA200*1.0025
+# RET-200: Weekly EMA8>EMA20 Squeeze <=0.5% + Price near EMA200 0.5% + HILEGA
+# TIME: SCAN + SENT + Run # | DATA: LIVE / NOT LIVE | MANUAL: SEND_TELEGRAM=false toh Telegram nahi jayega
 import os, sys, time, math, traceback, csv, argparse
 from datetime import datetime, timedelta, timezone
 import numpy as np
@@ -27,7 +25,6 @@ UPSTOX_TOKEN = os.getenv("UPSTOX_ACCESS_TOKEN", "")
 UPSTOX_ENABLED = bool(UPSTOX_TOKEN)
 UPSTOX_BASE = "https://api.upstox.com/v3"
 
-# ===== V1.5.1 TIMESTAMP - SCAN START CAPTURE =====
 SCAN_START_TIME = datetime.now(IST)
 SCAN_START_STR = SCAN_START_TIME.strftime("%d-%m %I:%M:%S %p IST")
 GITHUB_RUN_ID = os.getenv("GITHUB_RUN_ID", "")
@@ -35,8 +32,6 @@ GITHUB_RUN_NUMBER = os.getenv("GITHUB_RUN_NUMBER", "")
 GITHUB_SHA = os.getenv("GITHUB_SHA", "")[:7] if os.getenv("GITHUB_SHA") else ""
 DATA_MODE = "Upstox Live" if UPSTOX_ENABLED else "Yahoo Fallback"
 DATA_LIVE_FLAG = True
-
-# ===== V1.5.1 MANUAL NO TELEGRAM =====
 SEND_TELEGRAM = os.getenv("SEND_TELEGRAM", "true").lower() not in ["false", "0", "no", "off"]
 
 def get_stamp():
@@ -49,7 +44,7 @@ def get_stamp():
 def get_scan_header(mode_label):
     now, ts, run_txt, sha_txt = get_stamp()
     live_txt = "[LIVE]" if DATA_LIVE_FLAG else "[NOT LIVE] ⚠️"
-    return f"BALA V1.5.1 - SCAN: {SCAN_START_STR} | SENT: {ts} | {mode_label}{run_txt}{sha_txt}", live_txt
+    return f"BALA V1.6 - SCAN: {SCAN_START_STR} | SENT: {ts} | {mode_label}{run_txt}{sha_txt}", live_txt
 
 CHAT_IDS = []
 _raw_ids = []
@@ -62,7 +57,7 @@ for fid in ["5239892901", "9000971028"]:
     if fid not in _raw_ids:
         _raw_ids.append(fid)
 CHAT_IDS = _raw_ids
-print(f"BALA V1.5.1 Targets: {CHAT_IDS} | Upstox: {UPSTOX_ENABLED} | Run #{GITHUB_RUN_NUMBER} | SCAN START {SCAN_START_STR} | SEND_TELEGRAM={SEND_TELEGRAM}")
+print(f"BALA V1.6 Targets: {CHAT_IDS} | Upstox: {UPSTOX_ENABLED} | Run #{GITHUB_RUN_NUMBER} | SCAN START {SCAN_START_STR} | SEND_TELEGRAM={SEND_TELEGRAM}")
 
 PAPER_FILE = "paper_trades_fresh_cross.csv"
 PAPER_QTY = 100
@@ -232,7 +227,6 @@ def get_15m_df(symbol):
         df = flatten_df(df)
         if df is None or len(df) < 50:
             return None
-        # V1.5.1 FIX - Timezone bug fix - dono ko naive karke minus karo
         try:
             last_ts = df.index[-1]
             if last_ts.tzinfo is not None:
@@ -293,6 +287,7 @@ def check_pre_candidate(symbol):
         print(f"PRE {symbol} err {e}"); return None
 
 def check_fresh_cross_strategy(symbol, df_15=None):
+    # V1.6 - FRESH CROSS 0.25% - Bala Final Rule
     try:
         mo = get_data_safe(symbol, period="5y", interval="1mo")
         if mo is None or len(mo) < 21: return None
@@ -309,10 +304,26 @@ def check_fresh_cross_strategy(symbol, df_15=None):
         if df_15 is None or len(df_15) < 405: return None
         e200 = df_15["Close"].ewm(span=200, adjust=False).mean(); e400 = df_15["Close"].ewm(span=400, adjust=False).mean()
         e200_now = safe_float(e200.iloc[-1]); e400_now = safe_float(e400.iloc[-1]); e200_prev = safe_float(e200.iloc[-2]); e400_prev = safe_float(e400.iloc[-2])
-        if not (e200_now > e400_now and e200_prev <= e400_prev): return None
+        cmp_15 = safe_float(df_15["Close"].iloc[-1]); open_15 = safe_float(df_15["Open"].iloc[-1])
+
+        # === V1.6 RULE 1: Pichli candle me EMA200, EMA400 se 0.25% se zyada niche nahi ===
+        # EMA200_prev >= EMA400_prev * 0.9975 AND EMA200_prev <= EMA400_prev
+        if not (e200_prev >= e400_prev * 0.9975 and e200_prev <= e400_prev):
+            return None
+        # === V1.6 RULE 2: Ab wali candle me EMA200 >= EMA400 ===
+        if not (e200_now >= e400_now):
+            return None
+        # === V1.6 RULE 3: Price, EMA200 ke 0.25% andar hai ===
+        # Price >= EMA200*0.9975 AND Price <= EMA200*1.0025
+        if not (cmp_15 >= e200_now * 0.9975 and cmp_15 <= e200_now * 1.0025):
+            return None
+        # Price wali candle green ho
+        if not (cmp_15 > open_15):
+            return None
+
         hm = check_hm_15m(df_15)
         if hm["signal"] == "MILEGA":
-            print(f"  Fresh Cross {symbol} SKIP - HM MILEGA RSI9 {hm['rsi9']}"); return None
+            print(f"  Fresh 0.25% {symbol} SKIP - HM MILEGA RSI9 {hm['rsi9']}"); return None
         df_d = get_data_safe(symbol, period="6mo", interval="1d")
         if df_d is None or len(df_d) < 30: return None
         cmp_ = safe_float(df_d["Close"].iloc[-1]); atr = safe_float(calc_atr(df_d).iloc[-1])
@@ -322,16 +333,16 @@ def check_fresh_cross_strategy(symbol, df_15=None):
         risk = entry_high - sl
         if risk <= 0: risk = round(cmp_ * 0.008, 2); sl = round(cmp_ - risk, 2)
         t1 = round(entry_high + risk * 1.5, 2); t2 = round(entry_high + risk * 2.5, 2); sl_pct = round(risk / entry_high * 100, 2)
-        score = 80
+        dist_pct = (cmp_15 - e200_now) / e200_now * 100 if e200_now > 0 else 99
+        score = 85
         if mo_rsi > 65: score += 10
-        if mo_rsi > 70: score += 5
-        dist_w = abs(wk_close - wk_ema20) / wk_ema20 * 100
-        if dist_w <= 1.0: score += 5
+        if abs(dist_pct) <= 0.10: score += 5
         if hm["signal"] == "HILEGA": score += 5
         prob = min(95, score); win = min(92, 70 + (score - 80) * 1.0)
-        return {"symbol": symbol, "strategy": "FRESH CROSS", "tag": "FRESH CROSS", "emoji": "🔥", "cmp": round(cmp_, 2), "entry_low": entry_low, "entry_high": entry_high, "sl": sl, "t1": t1, "t2": t2, "sl_pct": sl_pct, "risk": round(risk, 2), "score": score, "prob": prob, "win": win, "monthly_ema8": round(mo_ema8, 2), "monthly_ema20": round(mo_ema20, 2), "monthly_rsi": round(mo_rsi, 1), "weekly_close": round(wk_close, 2), "weekly_ema20": round(wk_ema20, 2), "weekly_open": round(wk_open, 2), "weekly_prev_close": round(wk_prev_close, 2), "dist_weekly_pct": round(dist_w, 2), "e200_now": round(e200_now, 2), "e400_now": round(e400_now, 2), "e200_prev": round(e200_prev, 2), "e400_prev": round(e400_prev, 2), "atr": round(atr, 2), "hm": hm}
+        dist_w = abs(wk_close - wk_ema20) / wk_ema20 * 100
+        return {"symbol": symbol, "strategy": "FRESH CROSS 0.25%", "tag": "FRESH CROSS 0.25%", "emoji": "🔥", "cmp": round(cmp_, 2), "entry_low": entry_low, "entry_high": entry_high, "sl": sl, "t1": t1, "t2": t2, "sl_pct": sl_pct, "risk": round(risk, 2), "score": score, "prob": prob, "win": win, "monthly_ema8": round(mo_ema8, 2), "monthly_ema20": round(mo_ema20, 2), "monthly_rsi": round(mo_rsi, 1), "weekly_close": round(wk_close, 2), "weekly_ema20": round(wk_ema20, 2), "weekly_open": round(wk_open, 2), "weekly_prev_close": round(wk_prev_close, 2), "dist_weekly_pct": round(dist_w, 2), "e200_now": round(e200_now, 2), "e400_now": round(e400_now, 2), "e200_prev": round(e200_prev, 2), "e400_prev": round(e400_prev, 2), "dist_15_pct": round(dist_pct, 2), "cmp_15": round(cmp_15, 2), "cross_gap_pct": round((e400_prev - e200_prev) / e400_prev * 100, 3) if e400_prev > 0 else 0, "atr": round(atr, 2), "hm": hm}
     except Exception as e:
-        print(f"Fresh Cross {symbol} err {e}"); return None
+        print(f"Fresh 0.25% {symbol} err {e}"); return None
 
 def check_ret200_strategy(symbol, df_15=None):
     try:
@@ -492,14 +503,15 @@ def build_full_msg(market, fresh_list, ret_list, proxy_list, mode):
     header, live_txt = get_scan_header(mode)
     msg = f"{header}\nData: {DATA_MODE} {live_txt}\n"
     msg += f"Market: Nifty:{market['nifty']:.0f} RSI:{market['rsi']:.0f}\n"
-    msg += f"Scan:{len(NIFTY500)} | Fresh:{len(fresh_list)} | RET-200:{len(ret_list)} | Proxy:{len(proxy_list)}\n\n"
-    msg += "=== 1. BALA FRESH 🔥 + RET-200 ↩️ ===\n"
-    msg += "Monthly EMA8>EMA20 + RSI>60 | Weekly Close>EMA20 <=EMA20x1.03 >Open >Prev | 15m EMA200>EMA400 + HILEGA\n"
+    msg += f"Scan:{len(NIFTY500)} | Fresh 0.25%:{len(fresh_list)} | RET-200:{len(ret_list)} | Proxy:{len(proxy_list)}\n\n"
+    msg += "=== 1. BALA FRESH 0.25% 🔥 + RET-200 ↩️ ===\n"
+    msg += "Fresh 0.25%: Prev EMA200 0.25% niche se + Now EMA200>=EMA400 + Price EMA200 ke 0.25% andar + HILEGA\n"
+    msg += "Monthly EMA8>EMA20 + RSI>60 | Weekly Close>EMA20 <=EMA20x1.03 >Open >Prev\n"
     msg += "RET-200 Extra: Weekly EMA8>EMA20 + Squeeze <=0.5%\n\n"
     combined = fresh_list + ret_list
     combined = sorted(combined, key=lambda x: x["score"], reverse=True)
     if len(combined) == 0:
-        msg += "No Fresh / RET-200 today.\n\n"
+        msg += "No Fresh 0.25% / RET-200 today.\n\n"
     else:
         for i, r in enumerate(combined[:5]):
             sl_gtt = round(r["sl"] * 0.995); hm = r.get("hm", {})
@@ -509,11 +521,11 @@ def build_full_msg(market, fresh_list, ret_list, proxy_list, mode):
                 msg += f"   15m: CMP15 {r.get('cmp_15', r['cmp']):.0f} near EMA200 {r['e200_now']:.0f} ({r.get('dist_15_pct', 0):.2f}% upar) > EMA400 {r['e400_now']:.0f} | HM {hm.get('signal', '')} RSI9 {hm.get('rsi9', 0)}\n"
                 msg += f"   Monthly: EMA8 {r['monthly_ema8']:.0f} > EMA20 {r['monthly_ema20']:.0f} RSI {r['monthly_rsi']:.0f} | Weekly EMA8 {r.get('weekly_ema8', 0):.0f} > EMA20 {r['weekly_ema20']:.0f} Squeeze {r.get('weekly_squeeze_pct', 0):.2f}% | Weekly Close {r['weekly_close']:.0f}\n"
             else:
-                msg += f"{i+1}. {r['symbol']} CMP:{r['cmp']:.0f} Score:{r['score']:.0f} P:{r['prob']:.0f}% W:{r['win']:.0f}% 🔥 FRESH CROSS\n"
+                msg += f"{i+1}. {r['symbol']} CMP:{r['cmp']:.0f} Score:{r['score']:.0f} P:{r['prob']:.0f}% W:{r['win']:.0f}% 🔥 FRESH CROSS 0.25%\n"
                 msg += f"   Entry:{r['entry_low']:.0f}-{r['entry_high']:.0f} SL:{r['sl']:.0f} ({r['sl_pct']:.1f}%) T1:{r['t1']:.0f} T2:{r['t2']:.0f}\n"
                 msg += f"   Monthly: EMA8 {r['monthly_ema8']:.0f} > EMA20 {r['monthly_ema20']:.0f} RSI {r['monthly_rsi']:.0f}\n"
                 msg += f"   Weekly: Close {r['weekly_close']:.0f} > EMA20 {r['weekly_ema20']:.0f} ({r['dist_weekly_pct']:.1f}% upar) > Open {r['weekly_open']:.0f} > Prev {r['weekly_prev_close']:.0f}\n"
-                msg += f"   15m: EMA200 Now {r['e200_now']:.0f} > EMA400 {r['e400_now']:.0f} | Prev EMA200 {r['e200_prev']:.0f} <= EMA400 {r['e400_prev']:.0f} = FRESH | HM {hm.get('signal', '')} RSI9 {hm.get('rsi9', 0)}\n"
+                msg += f"   15m: Prev EMA200 {r['e200_prev']:.0f} <= EMA400 {r['e400_prev']:.0f} (Gap {r.get('cross_gap_pct', 0):.3f}% niche) | Now EMA200 {r['e200_now']:.0f} >= EMA400 {r['e400_now']:.0f} = FRESH 0.25% | Price {r.get('cmp_15', r['cmp']):.0f} EMA200 se {r.get('dist_15_pct', 0):.2f}% door | HM {hm.get('signal', '')} RSI9 {hm.get('rsi9', 0)}\n"
             msg += f"   PAPER GTT: SL {sl_gtt:.0f} | T1 {r['t1']:.0f} 50% | T2 {r['t2']:.0f} 50% | Qty {PAPER_QTY} VIRTUAL\n\n"
     msg += "=== 2. PROXY AVWP 📈 ===\n"
     msg += "Daily Close > 1D High + 5D High + EMA20 > EMA50 + Vol 1.5x + RSI9>55 + Close>100 + Monthly RSI>60 + P/B>1 + HILEGA\n\n"
@@ -537,7 +549,7 @@ def build_quick_msg(market, new_list, mode):
     msg = f"{header}\nData: {DATA_MODE} {live_txt}\n"
     msg += f"Market: Nifty:{market['nifty']:.0f} RSI:{market['rsi']:.0f}\n\n"
     if len(new_list) == 0:
-        msg += "QUICK: No new Fresh / RET-200 signal in last 15 min.\n\nPAPER ONLY\n"
+        msg += "QUICK: No new Fresh 0.25% / RET-200 signal in last 15 min.\n\nPAPER ONLY\n"
         return msg
     for i, r in enumerate(new_list):
         sl_gtt = round(r["sl"] * 0.995); hm = r.get("hm", {})
@@ -547,9 +559,9 @@ def build_quick_msg(market, new_list, mode):
             msg += f"   15m: CMP15 {r.get('cmp_15', r['cmp']):.0f} near EMA200 {r['e200_now']:.0f} ({r.get('dist_15_pct', 0):.2f}%) > EMA400 {r['e400_now']:.0f} | HM {hm.get('signal', '')} RSI9 {hm.get('rsi9', 0)}\n"
             msg += f"   Weekly: EMA8 {r.get('weekly_ema8', 0):.0f} > EMA20 {r['weekly_ema20']:.0f} Squeeze {r.get('weekly_squeeze_pct', 0):.2f}%\n"
         else:
-            msg += f"{i+1}. {r['symbol']} 🔥 FRESH CROSS CMP:{r['cmp']:.0f} P:{r['prob']:.0f}% Score:{r['score']:.0f}\n"
+            msg += f"{i+1}. {r['symbol']} 🔥 FRESH 0.25% CMP:{r['cmp']:.0f} P:{r['prob']:.0f}% Score:{r['score']:.0f}\n"
             msg += f"   Entry:{r['entry_low']:.0f}-{r['entry_high']:.0f} SL:{r['sl']:.0f} ({r['sl_pct']:.1f}%) T1:{r['t1']:.0f} T2:{r['t2']:.0f}\n"
-            msg += f"   15m: EMA200 {r['e200_now']:.0f} > EMA400 {r['e400_now']:.0f} FRESH | HM {hm.get('signal', '')} RSI9 {hm.get('rsi9', 0)}\n"
+            msg += f"   15m: Prev EMA200 {r['e200_prev']:.0f} <= EMA400 {r['e400_prev']:.0f} | Now EMA200 {r['e200_now']:.0f} >= EMA400 {r['e400_now']:.0f} FRESH 0.25% | Price EMA200 se {r.get('dist_15_pct', 0):.2f}% door | HM {hm.get('signal', '')} RSI9 {hm.get('rsi9', 0)}\n"
         msg += f"   PAPER GTT: SL {sl_gtt:.0f} | T1 {r['t1']:.0f} 50% | T2 {r['t2']:.0f} 50% | Qty {PAPER_QTY} VIRTUAL\n\n"
     msg += "Rule: Entry CMP ke paas hi lo. T1 pe 50% book, SL to Entry.\nPAPER ONLY\n"
     return msg
@@ -567,7 +579,7 @@ def scan_fresh_and_ret():
         for fut in futs:
             try:
                 f, r = fut.result()
-                if f: fresh_list.append(f); print(f"  ✅ FRESH PASS {f['symbol']} CMP {f['cmp']}")
+                if f: fresh_list.append(f); print(f"  ✅ FRESH 0.25% PASS {f['symbol']} CMP {f['cmp']} Price-EMA200 {f.get('dist_15_pct', 0)}% Gap {f.get('cross_gap_pct', 0)}%")
                 if r: ret_list.append(r); print(f"  ✅ RET-200 PASS {r['symbol']} CMP {r['cmp']} EMA200 {r['e200_now']} Dist {r.get('dist_15_pct', 0)}% Squeeze {r.get('weekly_squeeze_pct', 0)}%")
             except Exception as e: print(f"Scan err {futs[fut]} {e}")
     fresh_list = sorted(fresh_list, key=lambda x: x["score"], reverse=True); ret_list = sorted(ret_list, key=lambda x: x["score"], reverse=True)
@@ -590,7 +602,7 @@ def main():
     parser.add_argument("--mode", default="auto", choices=["auto", "full", "quick", "pre"])
     args = parser.parse_args()
     now_ist = datetime.now(IST)
-    print(f"BALA V1.5.1 Start {now_ist.strftime('%d-%m-%Y %H:%M %A IST')} Arg Mode:{args.mode} Run #{GITHUB_RUN_NUMBER} SCAN {SCAN_START_STR}")
+    print(f"BALA V1.6 Start {now_ist.strftime('%d-%m-%Y %H:%M %A IST')} Arg Mode:{args.mode} Run #{GITHUB_RUN_NUMBER} SCAN {SCAN_START_STR}")
     try:
         if args.mode == "auto":
             hh = now_ist.hour; mm = now_ist.minute
@@ -613,10 +625,10 @@ def main():
             print(f"PRE: {len(pre_list)} candidates")
             msg = build_pre_msg(market, pre_list, "PRE 9:20 AM")
             send_telegram(msg)
-            print("BALA V1.5.1 PRE Done")
+            print("BALA V1.6 PRE Done")
         elif mode == "full":
             fresh_list, ret_list = scan_fresh_and_ret()
-            print(f"Full scan Fresh {len(fresh_list)} Ret {len(ret_list)} - Now Proxy...")
+            print(f"Full scan Fresh 0.25% {len(fresh_list)} Ret {len(ret_list)} - Now Proxy...")
             proxy_list = []
             with ThreadPoolExecutor(max_workers=10) as ex:
                 futs_proxy = {ex.submit(check_proxy_avwp_strategy, sym): sym for sym in NIFTY500}
@@ -626,7 +638,7 @@ def main():
                         if r: proxy_list.append(r); print(f"  ✅ PROXY PASS {r['symbol']} CMP {r['cmp']} RSI9 {r['rsi9']} Vol {r['vol_ratio']}x")
                     except Exception as e: print(f"Proxy scan err {futs_proxy[fut]} {e}")
             proxy_list = sorted(proxy_list, key=lambda x: x["score"], reverse=True)
-            print(f"PASS: Fresh {len(fresh_list)} / Ret {len(ret_list)} / Proxy {len(proxy_list)}")
+            print(f"PASS: Fresh 0.25% {len(fresh_list)} / Ret {len(ret_list)} / Proxy {len(proxy_list)}")
             for r in fresh_list[:5]:
                 try:
                     if not is_already_papered_today(r["symbol"], "BALA_FRESH_CROSS"): record_paper(r["symbol"], r, "BALA_FRESH_CROSS")
@@ -641,33 +653,33 @@ def main():
                 except Exception as e: print(f"Paper skip {e}")
             msg = build_full_msg(market, fresh_list, ret_list, proxy_list, "FULL 9:30 AM")
             send_telegram(msg)
-            print("BALA V1.5.1 FULL Done")
+            print("BALA V1.6 FULL Done")
         else:
             fresh_list, ret_list = scan_fresh_and_ret()
             combined = fresh_list + ret_list; new_list = []
             for r in combined:
-                bot_name = "BALA_FRESH_CROSS" if r["strategy"] == "FRESH CROSS" else "BALA_RET200"
+                bot_name = "BALA_FRESH_CROSS" if "FRESH" in r["strategy"] else "BALA_RET200"
                 if not is_already_papered_today(r["symbol"], bot_name): new_list.append(r)
-            print(f"QUICK: Fresh {len(fresh_list)} Ret {len(ret_list)} New {len(new_list)}")
+            print(f"QUICK: Fresh 0.25% {len(fresh_list)} Ret {len(ret_list)} New {len(new_list)}")
             if len(new_list) == 0:
                 header_empty, live_txt_empty = get_scan_header("QUICK 15-MIN")
-                msg_empty = f"{header_empty}\nData: {DATA_MODE} {live_txt_empty}\nMarket: Nifty:{market['nifty']:.0f} RSI:{market['rsi']:.0f}\n\nQUICK: No new Fresh / RET-200 signal in last 15 min.\nFresh: {len(fresh_list)} Ret: {len(ret_list)}\n\nPAPER ONLY\n"
+                msg_empty = f"{header_empty}\nData: {DATA_MODE} {live_txt_empty}\nMarket: Nifty:{market['nifty']:.0f} RSI:{market['rsi']:.0f}\n\nQUICK: No new Fresh 0.25% / RET-200 signal in last 15 min.\nFresh: {len(fresh_list)} Ret: {len(ret_list)}\n\nPAPER ONLY\n"
                 send_telegram(msg_empty)
                 print("QUICK: No new signal - Empty msg sent")
                 return
             new_list = sorted(new_list, key=lambda x: x["score"], reverse=True)[:5]
             for r in new_list:
                 try:
-                    bot_name = "BALA_FRESH_CROSS" if r["strategy"] == "FRESH CROSS" else "BALA_RET200"; record_paper(r["symbol"], r, bot_name)
+                    bot_name = "BALA_FRESH_CROSS" if "FRESH" in r["strategy"] else "BALA_RET200"; record_paper(r["symbol"], r, bot_name)
                 except Exception as e: print(f"Paper skip {e}")
             msg = build_quick_msg(market, new_list, "QUICK 15-MIN")
             send_telegram(msg)
-            print("BALA V1.5.1 QUICK Done - New signal sent")
+            print("BALA V1.6 QUICK Done - New signal sent")
     except Exception as e:
-        print(f"V1.5.1 CRASH {e}"); traceback.print_exc()
+        print(f"V1.6 CRASH {e}"); traceback.print_exc()
         try:
             header2, live_txt2 = get_scan_header("CRASH")
-            send_telegram(f"{header2}\nBALA V1.5.1 CRASHED: {e}")
+            send_telegram(f"{header2}\nBALA V1.6 CRASHED: {e}")
         except Exception: pass
 
 if __name__ == "__main__":
