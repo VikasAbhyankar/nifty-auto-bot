@@ -1,74 +1,33 @@
-# BALA V1.2 - SEPARATE WORKFLOW - START 9:30 AM + EVERY 15 MIN
-# 9:30 AM = FULL SCAN (Fresh + Ret-200 + Proxy)
-# Har 15 min 9:45 se 3:00 tak = QUICK SCAN (Fresh + Ret only, naya signal mile toh hi Telegram)
-name: Bala V1.2 - 9:30 AM + 15 Min
-
+name: BALA V1.5
+run-name: BALA ${{ inputs.mode }} - Run ${{ github.run_number }}
 on:
   schedule:
-    # 9:30 AM IST = 04:00 UTC (Mon-Fri) - FULL
-    - cron: '0 4 * * 1-5'
-    # Har 15 min - 9:45 AM to 3:00 PM IST = 04:15 to 09:30 UTC - QUICK
-    - cron: '15,30,45 4 * * 1-5'
-    - cron: '0,15,30,45 5 * * 1-5'
-    - cron: '0,15,30,45 6 * * 1-5'
-    - cron: '0,15,30,45 7 * * 1-5'
-    - cron: '0,15,30,45 8 * * 1-5'
-    - cron: '0,15,30 9 * * 1-5'
+    - cron: '50 3 * * 1-5'  # 9:20 IST PRE
+    - cron: '0 4 * * 1-5'   # 9:30 IST FULL
+    - cron: '15 4 * * 1-5'  # 9:45 IST QUICK
+    - cron: '30 4 * * 1-5'  # 10:00 IST QUICK
+    - cron: '45 4 * * 1-5'  # 10:15 IST QUICK
   workflow_dispatch:
     inputs:
       mode:
-        description: 'full = Full Scan (Fresh+Ret+Proxy) / quick = Quick Scan (Fresh+Ret only)'
+        description: 'Mode'
         required: false
-        default: 'full'
+        default: 'auto'
         type: choice
-        options:
-          - full
-          - quick
-
-permissions:
-  contents: read
-
+        options: ['auto', 'pre', 'full', 'quick']
 jobs:
-  bala-v12:
-    name: Bala V1.2
+  run:
+    timeout-minutes: 8
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Python 3.11
+      - uses: actions/checkout@v4
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install yfinance pandas numpy requests pytz
-
-      - name: Check file exists
-        run: |
-          ls -lh bala_fresh_cross.py
-          python -m py_compile bala_fresh_cross.py && echo "V1.2 Syntax OK"
-
-      - name: Run Bala V1.2 - Auto Mode
-        if: github.event_name == 'schedule'
+      - name: Run BALA V1.5
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          UPSTOX_ACCESS_TOKEN: ${{ secrets.UPSTOX_ACCESS_TOKEN }}
         run: python bala_fresh_cross.py --mode auto
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_FNO_BOT_TOKEN: ${{ secrets.TELEGRAM_FNO_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          TELEGRAM_FNO_CHAT_ID: ${{ secrets.TELEGRAM_FNO_CHAT_ID }}
-          UPSTOX_ACCESS_TOKEN: ${{ secrets.UPSTOX_ACCESS_TOKEN }}
-          UPSTOX_TOKEN_EXPIRY: ${{ secrets.UPSTOX_TOKEN_EXPIRY }}
-
-      - name: Run Bala V1.2 - Manual Mode
-        if: github.event_name == 'workflow_dispatch'
-        run: python bala_fresh_cross.py --mode ${{ github.event.inputs.mode }}
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_FNO_BOT_TOKEN: ${{ secrets.TELEGRAM_FNO_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          TELEGRAM_FNO_CHAT_ID: ${{ secrets.TELEGRAM_FNO_CHAT_ID }}
-          UPSTOX_ACCESS_TOKEN: ${{ secrets.UPSTOX_ACCESS_TOKEN }}
-          UPSTOX_TOKEN_EXPIRY: ${{ secrets.UPSTOX_TOKEN_EXPIRY }}
