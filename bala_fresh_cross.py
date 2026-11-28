@@ -1,9 +1,10 @@
-# BALA V1.3 FINAL - START 9:30 AM - RET-200 WEEKLY SQUEEZE 0.5% ONLY IN RET-200
-# Strategy 1A: FRESH CROSS - Monthly Strong + Weekly Pullback + 15m EMA200>EMA400 Fresh - NO CHANGE
-# Strategy 1B: RET-200 - Weekly EMA8>EMA20 + Squeeze <=0.5% + 15m Price near EMA200 (0.5%) + EMA200>EMA400 + HILEGA
-# Strategy 2: PROXY AVWP - Chartink PROXY AVWP 20112026 - Daily Breakout + Vol + RSI - NO CHANGE
-# HM Filter: RSI(9) + EMA(3) on RSI + WMA(21) on RSI + 50 Filter - HILEGA only, MILEGA = SKIP
-# Schedule: 9:30 AM FULL + Every 15 min QUICK (Fresh + Ret only) | PAPER ONLY
+# BALA V1.5 FINAL - 9:20 PRE + CORRECT TIME + CORRECT DATA
+# 9:20 PRE: Daily+Weekly only - Watchlist
+# 9:30 FULL: Fresh + RET-200 + Proxy - 15m confirm
+# RET-200: Weekly EMA8>EMA20 Squeeze <=0.5% ONLY IN RET-200
+# TIME: SCAN START + SENT TIME + Run # - Sabhi msg me
+# DATA: Upstox Live check + Stale 15m SKIP + Live CMP
+# Nifty500 only - No ETF, P/B NO CHANGE
 import os, sys, time, math, traceback, csv, argparse
 from datetime import datetime, timedelta, timezone
 import numpy as np
@@ -24,6 +25,27 @@ UPSTOX_TOKEN = os.getenv("UPSTOX_ACCESS_TOKEN", "")
 UPSTOX_ENABLED = bool(UPSTOX_TOKEN)
 UPSTOX_BASE = "https://api.upstox.com/v3"
 
+# ===== V1.5 TIMESTAMP - SCAN START CAPTURE =====
+SCAN_START_TIME = datetime.now(IST)
+SCAN_START_STR = SCAN_START_TIME.strftime("%d-%m %I:%M:%S %p IST")
+GITHUB_RUN_ID = os.getenv("GITHUB_RUN_ID", "")
+GITHUB_RUN_NUMBER = os.getenv("GITHUB_RUN_NUMBER", "")
+GITHUB_SHA = os.getenv("GITHUB_SHA", "")[:7] if os.getenv("GITHUB_SHA") else ""
+DATA_MODE = "Upstox Live" if UPSTOX_ENABLED else "Yahoo Fallback"
+DATA_LIVE_FLAG = True  # Agar koi bhi data stale mila toh False ho jayega
+
+def get_stamp():
+    now = datetime.now(IST)
+    ts = now.strftime("%d-%m %I:%M:%S %p IST")
+    run_txt = f" | Run #{GITHUB_RUN_NUMBER}" if GITHUB_RUN_NUMBER else ""
+    sha_txt = f" | {GITHUB_SHA}" if GITHUB_SHA else ""
+    return now, ts, run_txt, sha_txt
+
+def get_scan_header(mode_label):
+    now, ts, run_txt, sha_txt = get_stamp()
+    live_txt = "[LIVE]" if DATA_LIVE_FLAG else "[NOT LIVE] ⚠️"
+    return f"BALA V1.5 - SCAN: {SCAN_START_STR} | SENT: {ts} | {mode_label}{run_txt}{sha_txt}", live_txt
+
 CHAT_IDS = []
 _raw_ids = []
 if CHAT_FROM_ENV:
@@ -35,7 +57,7 @@ for fid in ["5239892901", "9000971028"]:
     if fid not in _raw_ids:
         _raw_ids.append(fid)
 CHAT_IDS = _raw_ids
-print(f"BALA V1.3 Targets: {CHAT_IDS} | Upstox: {UPSTOX_ENABLED}")
+print(f"BALA V1.5 Targets: {CHAT_IDS} | Upstox: {UPSTOX_ENABLED} | Run #{GITHUB_RUN_NUMBER} | SCAN START {SCAN_START_STR}")
 
 PAPER_FILE = "paper_trades_fresh_cross.csv"
 PAPER_QTY = 100
@@ -92,10 +114,7 @@ def calc_rsi(series, period=14):
 
 def calc_atr(df, n=14):
     try:
-        h = df["High"]
-        l = df["Low"]
-        c = df["Close"]
-        pc = c.shift(1)
+        h = df["High"]; l = df["Low"]; c = df["Close"]; pc = c.shift(1)
         tr = pd.concat([h - l, (h - pc).abs(), (l - pc).abs()], axis=1).max(axis=1)
         return tr.ewm(alpha=1 / n, adjust=False).mean()
     except Exception:
@@ -167,30 +186,31 @@ def get_upstox_candles(symbol, interval="day", days_back=365):
         return None
 
 def get_data_safe(symbol, period="1y", interval="1d"):
-    upstox_interval = "day"
-    days_back = 365
+    global DATA_LIVE_FLAG
+    upstox_interval = "day"; days_back = 365
     if interval == "1d":
-        upstox_interval = "day"
-        days_back = 365
+        upstox_interval = "day"; days_back = 365
     elif interval == "1wk":
-        upstox_interval = "week"
-        days_back = 730
+        upstox_interval = "week"; days_back = 730
     elif interval == "1mo":
-        upstox_interval = "month"
-        days_back = 1825
+        upstox_interval = "month"; days_back = 1825
     elif interval == "1h":
-        upstox_interval = "1hour"
-        days_back = 30
+        upstox_interval = "1hour"; days_back = 30
     if UPSTOX_ENABLED:
         df = get_upstox_candles(symbol, upstox_interval, days_back)
         if df is not None and len(df) >= 50:
             try:
                 live = upstox_live_price(to_upstox_key(symbol))
                 if live and live > 0:
-                    df.loc[df.index[-1], "Close"] = live
+                    old_close = safe_float(df["Close"].iloc[-1])
+                    # V1.5 - Live price 5% se zyada alag hai toh data galat hai, live mat lagao
+                    if abs(live - old_close) / old_close * 100 < 5:
+                        df.loc[df.index[-1], "Close"] = live
             except Exception:
                 pass
             return flatten_df(df)
+    # V1.5 - Yahoo fallback pe gaya toh NOT LIVE mark karo
+    DATA_LIVE_FLAG = False
     try:
         ticker = symbol if symbol.startswith("^") else symbol + ".NS"
         df = yf.download(ticker, period=period, interval=interval, progress=False, auto_adjust=False, timeout=25)
@@ -202,12 +222,30 @@ def get_data_safe(symbol, period="1y", interval="1d"):
         return None
 
 def get_15m_df(symbol):
+    global DATA_LIVE_FLAG
     try:
         ticker = symbol + ".NS"
         df = yf.download(ticker, period="5d", interval="15m", progress=False, auto_adjust=True, timeout=25)
         df = flatten_df(df)
         if df is None or len(df) < 50:
             return None
+        # V1.5 - Last candle kitni purani hai? Market hours me 25 min se zyada purani toh STALE
+        try:
+            last_ts = df.index[-1]
+            if last_ts.tzinfo is None:
+                last_ts = last_ts.tz_localize("UTC").tz_convert(IST)
+            else:
+                last_ts = last_ts.tz_convert(IST)
+            age_min = (datetime.now(IST) - last_ts.replace(tzinfo=None)).total_seconds() / 60
+            now_ist = datetime.now(IST)
+            is_market_hours = (9 <= now_ist.hour < 16)
+            # Market band hone ke baad (3:30 ke baad) ye check skip - candle purani hi hogi
+            if is_market_hours and age_min > 25:
+                print(f"  15m STALE {symbol} Age {age_min:.0f} min - SKIP")
+                DATA_LIVE_FLAG = False
+                return None
+        except Exception as e:
+            print(f"  15m age check err {symbol} {e}")
         return df
     except Exception:
         return None
@@ -217,19 +255,13 @@ def check_hm_15m(df_15):
         if df_15 is None or len(df_15) < 30:
             return {"signal": "NO_DATA", "rsi9": 0, "ema3": 0, "wma21": 0}
         rsi9_series = calc_rsi(df_15["Close"], 9)
-        rsi9 = safe_float(rsi9_series.iloc[-1])
-        rsi9_prev = safe_float(rsi9_series.iloc[-2])
+        rsi9 = safe_float(rsi9_series.iloc[-1]); rsi9_prev = safe_float(rsi9_series.iloc[-2])
         ema3_series = rsi9_series.ewm(span=3, adjust=False).mean()
-        ema3 = safe_float(ema3_series.iloc[-1])
-        ema3_prev = safe_float(ema3_series.iloc[-2])
+        ema3 = safe_float(ema3_series.iloc[-1]); ema3_prev = safe_float(ema3_series.iloc[-2])
         wma21_series = rsi9_series.rolling(21).apply(lambda x: np.dot(x, np.arange(1, 22)) / np.arange(1, 22).sum(), raw=True)
-        wma21 = safe_float(wma21_series.iloc[-1])
-        wma21_prev = safe_float(wma21_series.iloc[-2])
+        wma21 = safe_float(wma21_series.iloc[-1]); wma21_prev = safe_float(wma21_series.iloc[-2])
         if rsi9 > ema3 and rsi9 > wma21 and rsi9 > 50:
-            if rsi9_prev <= ema3_prev or rsi9_prev <= wma21_prev:
-                sig = "HILEGA"
-            else:
-                sig = "HILEGA_HOLD"
+            sig = "HILEGA" if (rsi9_prev <= ema3_prev or rsi9_prev <= wma21_prev) else "HILEGA_HOLD"
         elif rsi9 < ema3 and rsi9 < wma21 and rsi9 < 50:
             sig = "MILEGA"
         else:
@@ -239,277 +271,168 @@ def check_hm_15m(df_15):
         print(f"HM err {e}")
         return {"signal": "NO_DATA", "rsi9": 0, "ema3": 0, "wma21": 0}
 
+def check_pre_candidate(symbol):
+    try:
+        mo = get_data_safe(symbol, period="5y", interval="1mo")
+        if mo is None or len(mo) < 21: return None
+        mo_close = mo["Close"]; mo_ema8 = safe_float(mo_close.ewm(span=8, adjust=False).mean().iloc[-1]); mo_ema20 = safe_float(mo_close.ewm(span=20, adjust=False).mean().iloc[-1]); mo_rsi = safe_float(calc_rsi(mo_close, 14).iloc[-1])
+        if not (mo_ema8 > mo_ema20 and mo_rsi > 60): return None
+        wk = get_data_safe(symbol, period="2y", interval="1wk")
+        if wk is None or len(wk) < 22: return None
+        wk_close = safe_float(wk["Close"].iloc[-1]); wk_open = safe_float(wk["Open"].iloc[-1]); wk_prev_close = safe_float(wk["Close"].iloc[-2]); wk_ema20 = safe_float(wk["Close"].ewm(span=20, adjust=False).mean().iloc[-1]); wk_ema8 = safe_float(wk["Close"].ewm(span=8, adjust=False).mean().iloc[-1])
+        wk_squeeze = abs(wk_ema8 - wk_ema20) / wk_ema20 * 100 if wk_ema20 > 0 else 99
+        if not (wk_close > wk_ema20 and wk_close <= wk_ema20 * 1.03 and wk_close > wk_open and wk_close > wk_prev_close): return None
+        df_d = get_data_safe(symbol, period="6mo", interval="1d")
+        if df_d is None or len(df_d) < 30: return None
+        cmp_ = safe_float(df_d["Close"].iloc[-1])
+        tag = "RET-200 PRE" if (wk_ema8 > wk_ema20 and wk_squeeze <= 0.5) else "FRESH PRE"
+        emoji = "↩️" if "RET" in tag else "🔥"
+        return {"symbol": symbol, "strategy": tag, "tag": tag, "emoji": emoji, "cmp": round(cmp_, 2), "monthly_ema8": round(mo_ema8, 2), "monthly_ema20": round(mo_ema20, 2), "monthly_rsi": round(mo_rsi, 1), "weekly_close": round(wk_close, 2), "weekly_ema20": round(wk_ema20, 2), "weekly_ema8": round(wk_ema8, 2), "weekly_squeeze_pct": round(wk_squeeze, 2), "weekly_open": round(wk_open, 2), "weekly_prev_close": round(wk_prev_close, 2), "score": 85 if "RET" in tag else 80, "prob": 85, "win": 80, "hm": {"signal": "PRE - 15m 9:30 pe confirm hoga", "rsi9": 0}}
+    except Exception as e:
+        print(f"PRE {symbol} err {e}"); return None
+
 def check_fresh_cross_strategy(symbol, df_15=None):
     try:
         mo = get_data_safe(symbol, period="5y", interval="1mo")
-        if mo is None or len(mo) < 21:
-            return None
-        mo_close = mo["Close"]
-        mo_ema8 = safe_float(mo_close.ewm(span=8, adjust=False).mean().iloc[-1])
-        mo_ema20 = safe_float(mo_close.ewm(span=20, adjust=False).mean().iloc[-1])
-        mo_rsi = safe_float(calc_rsi(mo_close, 14).iloc[-1])
-        if not (mo_ema8 > mo_ema20 and mo_rsi > 60):
-            return None
+        if mo is None or len(mo) < 21: return None
+        mo_close = mo["Close"]; mo_ema8 = safe_float(mo_close.ewm(span=8, adjust=False).mean().iloc[-1]); mo_ema20 = safe_float(mo_close.ewm(span=20, adjust=False).mean().iloc[-1]); mo_rsi = safe_float(calc_rsi(mo_close, 14).iloc[-1])
+        if not (mo_ema8 > mo_ema20 and mo_rsi > 60): return None
         wk = get_data_safe(symbol, period="2y", interval="1wk")
-        if wk is None or len(wk) < 22:
-            return None
-        wk_close = safe_float(wk["Close"].iloc[-1])
-        wk_open = safe_float(wk["Open"].iloc[-1])
-        wk_prev_close = safe_float(wk["Close"].iloc[-2])
-        wk_ema20 = safe_float(wk["Close"].ewm(span=20, adjust=False).mean().iloc[-1])
-        if not (wk_close > wk_ema20):
-            return None
-        if not (wk_close <= wk_ema20 * 1.03):
-            return None
-        if not (wk_close > wk_open):
-            return None
-        if not (wk_close > wk_prev_close):
-            return None
-        if df_15 is None:
-            df_15 = get_15m_df(symbol)
-        if df_15 is None or len(df_15) < 405:
-            return None
-        e200 = df_15["Close"].ewm(span=200, adjust=False).mean()
-        e400 = df_15["Close"].ewm(span=400, adjust=False).mean()
-        e200_now = safe_float(e200.iloc[-1])
-        e400_now = safe_float(e400.iloc[-1])
-        e200_prev = safe_float(e200.iloc[-2])
-        e400_prev = safe_float(e400.iloc[-2])
-        if not (e200_now > e400_now and e200_prev <= e400_prev):
-            return None
+        if wk is None or len(wk) < 22: return None
+        wk_close = safe_float(wk["Close"].iloc[-1]); wk_open = safe_float(wk["Open"].iloc[-1]); wk_prev_close = safe_float(wk["Close"].iloc[-2]); wk_ema20 = safe_float(wk["Close"].ewm(span=20, adjust=False).mean().iloc[-1])
+        if not (wk_close > wk_ema20): return None
+        if not (wk_close <= wk_ema20 * 1.03): return None
+        if not (wk_close > wk_open): return None
+        if not (wk_close > wk_prev_close): return None
+        if df_15 is None: df_15 = get_15m_df(symbol)
+        if df_15 is None or len(df_15) < 405: return None
+        e200 = df_15["Close"].ewm(span=200, adjust=False).mean(); e400 = df_15["Close"].ewm(span=400, adjust=False).mean()
+        e200_now = safe_float(e200.iloc[-1]); e400_now = safe_float(e400.iloc[-1]); e200_prev = safe_float(e200.iloc[-2]); e400_prev = safe_float(e400.iloc[-2])
+        if not (e200_now > e400_now and e200_prev <= e400_prev): return None
         hm = check_hm_15m(df_15)
         if hm["signal"] == "MILEGA":
-            print(f"  Fresh Cross {symbol} SKIP - HM MILEGA RSI9 {hm['rsi9']}")
-            return None
+            print(f"  Fresh Cross {symbol} SKIP - HM MILEGA RSI9 {hm['rsi9']}"); return None
         df_d = get_data_safe(symbol, period="6mo", interval="1d")
-        if df_d is None or len(df_d) < 30:
-            return None
-        cmp_ = safe_float(df_d["Close"].iloc[-1])
-        atr = safe_float(calc_atr(df_d).iloc[-1])
-        entry_low = round(cmp_ * 0.998, 2)
-        entry_high = round(cmp_, 2)
-        sl_by_ema = round(wk_ema20 * 0.996, 2)
-        sl_by_pct = round(cmp_ * 0.992, 2)
-        sl = round(min(sl_by_ema, sl_by_pct), 2)
-        if sl % 1 == 0:
-            sl -= 0.30
+        if df_d is None or len(df_d) < 30: return None
+        cmp_ = safe_float(df_d["Close"].iloc[-1]); atr = safe_float(calc_atr(df_d).iloc[-1])
+        entry_low = round(cmp_ * 0.998, 2); entry_high = round(cmp_, 2)
+        sl_by_ema = round(wk_ema20 * 0.996, 2); sl_by_pct = round(cmp_ * 0.992, 2); sl = round(min(sl_by_ema, sl_by_pct), 2)
+        if sl % 1 == 0: sl -= 0.30
         risk = entry_high - sl
-        if risk <= 0:
-            risk = round(cmp_ * 0.008, 2)
-            sl = round(cmp_ - risk, 2)
-        t1 = round(entry_high + risk * 1.5, 2)
-        t2 = round(entry_high + risk * 2.5, 2)
-        sl_pct = round(risk / entry_high * 100, 2)
+        if risk <= 0: risk = round(cmp_ * 0.008, 2); sl = round(cmp_ - risk, 2)
+        t1 = round(entry_high + risk * 1.5, 2); t2 = round(entry_high + risk * 2.5, 2); sl_pct = round(risk / entry_high * 100, 2)
         score = 80
-        if mo_rsi > 65:
-            score += 10
-        if mo_rsi > 70:
-            score += 5
+        if mo_rsi > 65: score += 10
+        if mo_rsi > 70: score += 5
         dist_w = abs(wk_close - wk_ema20) / wk_ema20 * 100
-        if dist_w <= 1.0:
-            score += 5
-        if hm["signal"] == "HILEGA":
-            score += 5
-        prob = min(95, score)
-        win = min(92, 70 + (score - 80) * 1.0)
+        if dist_w <= 1.0: score += 5
+        if hm["signal"] == "HILEGA": score += 5
+        prob = min(95, score); win = min(92, 70 + (score - 80) * 1.0)
         return {"symbol": symbol, "strategy": "FRESH CROSS", "tag": "FRESH CROSS", "emoji": "🔥", "cmp": round(cmp_, 2), "entry_low": entry_low, "entry_high": entry_high, "sl": sl, "t1": t1, "t2": t2, "sl_pct": sl_pct, "risk": round(risk, 2), "score": score, "prob": prob, "win": win, "monthly_ema8": round(mo_ema8, 2), "monthly_ema20": round(mo_ema20, 2), "monthly_rsi": round(mo_rsi, 1), "weekly_close": round(wk_close, 2), "weekly_ema20": round(wk_ema20, 2), "weekly_open": round(wk_open, 2), "weekly_prev_close": round(wk_prev_close, 2), "dist_weekly_pct": round(dist_w, 2), "e200_now": round(e200_now, 2), "e400_now": round(e400_now, 2), "e200_prev": round(e200_prev, 2), "e400_prev": round(e400_prev, 2), "atr": round(atr, 2), "hm": hm}
     except Exception as e:
-        print(f"Fresh Cross {symbol} err {e}")
-        return None
+        print(f"Fresh Cross {symbol} err {e}"); return None
 
 def check_ret200_strategy(symbol, df_15=None):
     try:
         mo = get_data_safe(symbol, period="5y", interval="1mo")
-        if mo is None or len(mo) < 21:
-            return None
-        mo_close = mo["Close"]
-        mo_ema8 = safe_float(mo_close.ewm(span=8, adjust=False).mean().iloc[-1])
-        mo_ema20 = safe_float(mo_close.ewm(span=20, adjust=False).mean().iloc[-1])
-        mo_rsi = safe_float(calc_rsi(mo_close, 14).iloc[-1])
-        if not (mo_ema8 > mo_ema20 and mo_rsi > 60):
-            return None
+        if mo is None or len(mo) < 21: return None
+        mo_close = mo["Close"]; mo_ema8 = safe_float(mo_close.ewm(span=8, adjust=False).mean().iloc[-1]); mo_ema20 = safe_float(mo_close.ewm(span=20, adjust=False).mean().iloc[-1]); mo_rsi = safe_float(calc_rsi(mo_close, 14).iloc[-1])
+        if not (mo_ema8 > mo_ema20 and mo_rsi > 60): return None
         wk = get_data_safe(symbol, period="2y", interval="1wk")
-        if wk is None or len(wk) < 22:
-            return None
-        wk_close = safe_float(wk["Close"].iloc[-1])
-        wk_open = safe_float(wk["Open"].iloc[-1])
-        wk_prev_close = safe_float(wk["Close"].iloc[-2])
-        wk_ema20 = safe_float(wk["Close"].ewm(span=20, adjust=False).mean().iloc[-1])
-        wk_ema8 = safe_float(wk["Close"].ewm(span=8, adjust=False).mean().iloc[-1])
-        if not (wk_ema8 > wk_ema20):
-            return None
+        if wk is None or len(wk) < 22: return None
+        wk_close = safe_float(wk["Close"].iloc[-1]); wk_open = safe_float(wk["Open"].iloc[-1]); wk_prev_close = safe_float(wk["Close"].iloc[-2]); wk_ema20 = safe_float(wk["Close"].ewm(span=20, adjust=False).mean().iloc[-1]); wk_ema8 = safe_float(wk["Close"].ewm(span=8, adjust=False).mean().iloc[-1])
+        if not (wk_ema8 > wk_ema20): return None
         wk_squeeze_pct = abs(wk_ema8 - wk_ema20) / wk_ema20 * 100 if wk_ema20 > 0 else 99
-        if not (wk_squeeze_pct <= 0.5):
-            return None
-        if not (wk_close > wk_ema20):
-            return None
-        if not (wk_close <= wk_ema20 * 1.03):
-            return None
-        if not (wk_close > wk_open):
-            return None
-        if not (wk_close > wk_prev_close):
-            return None
-        if df_15 is None:
-            df_15 = get_15m_df(symbol)
-        if df_15 is None or len(df_15) < 405:
-            return None
-        e200_series = df_15["Close"].ewm(span=200, adjust=False).mean()
-        e400_series = df_15["Close"].ewm(span=400, adjust=False).mean()
-        e200_now = safe_float(e200_series.iloc[-1])
-        e400_now = safe_float(e400_series.iloc[-1])
-        cmp_15 = safe_float(df_15["Close"].iloc[-1])
-        open_15 = safe_float(df_15["Open"].iloc[-1])
-        if not (e200_now > e400_now):
-            return None
-        if not (cmp_15 >= e200_now):
-            return None
+        if not (wk_squeeze_pct <= 0.5): return None
+        if not (wk_close > wk_ema20): return None
+        if not (wk_close <= wk_ema20 * 1.03): return None
+        if not (wk_close > wk_open): return None
+        if not (wk_close > wk_prev_close): return None
+        if df_15 is None: df_15 = get_15m_df(symbol)
+        if df_15 is None or len(df_15) < 405: return None
+        e200_series = df_15["Close"].ewm(span=200, adjust=False).mean(); e400_series = df_15["Close"].ewm(span=400, adjust=False).mean()
+        e200_now = safe_float(e200_series.iloc[-1]); e400_now = safe_float(e400_series.iloc[-1]); cmp_15 = safe_float(df_15["Close"].iloc[-1]); open_15 = safe_float(df_15["Open"].iloc[-1])
+        if not (e200_now > e400_now): return None
+        if not (cmp_15 >= e200_now): return None
         dist_pct = (cmp_15 - e200_now) / e200_now * 100 if e200_now > 0 else 99
-        if not (dist_pct <= 0.5):
-            return None
-        if not (cmp_15 > open_15):
-            return None
+        if not (dist_pct <= 0.5): return None
+        if not (cmp_15 > open_15): return None
         hm = check_hm_15m(df_15)
         if hm["signal"] not in ["HILEGA", "HILEGA_HOLD"]:
-            print(f"  RET-200 {symbol} SKIP - HM {hm['signal']} RSI9 {hm['rsi9']}")
-            return None
+            print(f"  RET-200 {symbol} SKIP - HM {hm['signal']} RSI9 {hm['rsi9']}"); return None
         df_d = get_data_safe(symbol, period="6mo", interval="1d")
-        if df_d is None or len(df_d) < 30:
-            return None
-        cmp_ = safe_float(df_d["Close"].iloc[-1])
-        atr = safe_float(calc_atr(df_d).iloc[-1])
-        entry_low = round(max(e200_now, cmp_ * 0.998), 2)
-        entry_high = round(cmp_, 2)
-        if entry_low >= entry_high:
-            entry_low = round(cmp_ * 0.998, 2)
-        sl_by_ema = round(e200_now * 0.995, 2)
-        sl_by_pct = round(cmp_ * 0.99, 2)
-        sl = round(min(sl_by_ema, sl_by_pct), 2)
-        if sl % 1 == 0:
-            sl -= 0.30
+        if df_d is None or len(df_d) < 30: return None
+        cmp_ = safe_float(df_d["Close"].iloc[-1]); atr = safe_float(calc_atr(df_d).iloc[-1])
+        entry_low = round(max(e200_now, cmp_ * 0.998), 2); entry_high = round(cmp_, 2)
+        if entry_low >= entry_high: entry_low = round(cmp_ * 0.998, 2)
+        sl_by_ema = round(e200_now * 0.995, 2); sl_by_pct = round(cmp_ * 0.99, 2); sl = round(min(sl_by_ema, sl_by_pct), 2)
+        if sl % 1 == 0: sl -= 0.30
         risk = entry_high - sl
-        if risk <= 0:
-            risk = round(cmp_ * 0.01, 2)
-            sl = round(cmp_ - risk, 2)
-        t1 = round(entry_high + risk * 1.5, 2)
-        t2 = round(entry_high + risk * 2.5, 2)
-        sl_pct = round(risk / entry_high * 100, 2)
+        if risk <= 0: risk = round(cmp_ * 0.01, 2); sl = round(cmp_ - risk, 2)
+        t1 = round(entry_high + risk * 1.5, 2); t2 = round(entry_high + risk * 2.5, 2); sl_pct = round(risk / entry_high * 100, 2)
         score = 82
-        if dist_pct <= 0.2:
-            score += 5
-        if hm["signal"] == "HILEGA":
-            score += 5
-        if mo_rsi > 65:
-            score += 5
-        if wk_squeeze_pct <= 0.25:
-            score += 5
-        prob = min(95, score)
-        win = min(92, 72 + (score - 82) * 1.0)
+        if dist_pct <= 0.2: score += 5
+        if hm["signal"] == "HILEGA": score += 5
+        if mo_rsi > 65: score += 5
+        if wk_squeeze_pct <= 0.25: score += 5
+        prob = min(95, score); win = min(92, 72 + (score - 82) * 1.0)
         return {"symbol": symbol, "strategy": "RET-200", "tag": "RET-200", "emoji": "↩️", "cmp": round(cmp_, 2), "entry_low": entry_low, "entry_high": entry_high, "sl": sl, "t1": t1, "t2": t2, "sl_pct": sl_pct, "risk": round(risk, 2), "score": score, "prob": prob, "win": win, "monthly_ema8": round(mo_ema8, 2), "monthly_ema20": round(mo_ema20, 2), "monthly_rsi": round(mo_rsi, 1), "weekly_close": round(wk_close, 2), "weekly_ema20": round(wk_ema20, 2), "weekly_ema8": round(wk_ema8, 2), "weekly_squeeze_pct": round(wk_squeeze_pct, 2), "weekly_open": round(wk_open, 2), "weekly_prev_close": round(wk_prev_close, 2), "dist_weekly_pct": round(abs(wk_close - wk_ema20) / wk_ema20 * 100, 2), "e200_now": round(e200_now, 2), "e400_now": round(e400_now, 2), "e200_prev": round(safe_float(e200_series.iloc[-2]), 2), "e400_prev": round(safe_float(e400_series.iloc[-2]), 2), "dist_15_pct": round(dist_pct, 2), "cmp_15": round(cmp_15, 2), "atr": round(atr, 2), "hm": hm}
     except Exception as e:
-        print(f"RET-200 {symbol} err {e}")
-        return None
+        print(f"RET-200 {symbol} err {e}"); return None
 
 def check_proxy_avwp_strategy(symbol):
     try:
         df_d = get_data_safe(symbol, period="1y", interval="1d")
-        if df_d is None or len(df_d) < 60:
-            return None
-        close = safe_float(df_d["Close"].iloc[-1])
-        prev_close = safe_float(df_d["Close"].iloc[-2])
-        high_1ago = safe_float(df_d["High"].iloc[-2])
-        high_5ago = safe_float(df_d["High"].iloc[-6])
-        vol = safe_float(df_d["Volume"].iloc[-1])
-        vol_sma20 = safe_float(df_d["Volume"].iloc[-21:-1].mean())
-        ema20 = safe_float(df_d["Close"].ewm(span=20, adjust=False).mean().iloc[-1])
-        ema50 = safe_float(df_d["Close"].ewm(span=50, adjust=False).mean().iloc[-1])
-        rsi9 = safe_float(calc_rsi(df_d["Close"], 9).iloc[-1])
-        if not (close > high_1ago):
-            return None
-        if not (close > high_5ago):
-            return None
-        if not (close > ema20):
-            return None
-        if not (ema20 > ema50):
-            return None
-        if not (vol_sma20 > 0 and vol > vol_sma20 * 1.5):
-            return None
-        if not (rsi9 > 55):
-            return None
-        if not (close > 100):
-            return None
-        if not (close > prev_close):
-            return None
+        if df_d is None or len(df_d) < 60: return None
+        close = safe_float(df_d["Close"].iloc[-1]); prev_close = safe_float(df_d["Close"].iloc[-2]); high_1ago = safe_float(df_d["High"].iloc[-2]); high_5ago = safe_float(df_d["High"].iloc[-6]); vol = safe_float(df_d["Volume"].iloc[-1]); vol_sma20 = safe_float(df_d["Volume"].iloc[-21:-1].mean()); ema20 = safe_float(df_d["Close"].ewm(span=20, adjust=False).mean().iloc[-1]); ema50 = safe_float(df_d["Close"].ewm(span=50, adjust=False).mean().iloc[-1]); rsi9 = safe_float(calc_rsi(df_d["Close"], 9).iloc[-1])
+        if not (close > high_1ago): return None
+        if not (close > high_5ago): return None
+        if not (close > ema20): return None
+        if not (ema20 > ema50): return None
+        if not (vol_sma20 > 0 and vol > vol_sma20 * 1.5): return None
+        if not (rsi9 > 55): return None
+        if not (close > 100): return None
+        if not (close > prev_close): return None
         mo = get_data_safe(symbol, period="5y", interval="1mo")
-        if mo is None or len(mo) < 15:
-            return None
+        if mo is None or len(mo) < 15: return None
         mo_rsi = safe_float(calc_rsi(mo["Close"], 14).iloc[-1])
-        if not (mo_rsi > 60):
-            return None
+        if not (mo_rsi > 60): return None
         pb = 0
         try:
-            ticker = yf.Ticker(symbol + ".NS")
-            info = ticker.info
-            pb = safe_float(info.get("priceToBook", 0))
-        except Exception:
-            pb = 0
-        if pb > 0 and not (pb > 1):
-            return None
-        df_15 = get_15m_df(symbol)
-        hm = check_hm_15m(df_15) if df_15 is not None else {"signal": "NO_DATA", "rsi9": 0, "ema3": 0, "wma21": 0}
+            ticker = yf.Ticker(symbol + ".NS"); info = ticker.info; pb = safe_float(info.get("priceToBook", 0))
+        except Exception: pb = 0
+        if pb > 0 and not (pb > 1): return None
+        df_15 = get_15m_df(symbol); hm = check_hm_15m(df_15) if df_15 is not None else {"signal": "NO_DATA", "rsi9": 0, "ema3": 0, "wma21": 0}
         if hm["signal"] == "MILEGA":
-            print(f"  Proxy {symbol} SKIP - HM MILEGA")
-            return None
-        atr = safe_float(calc_atr(df_d).iloc[-1])
-        cmp_ = close
-        entry_low = round(cmp_ * 0.998, 2)
-        entry_high = round(cmp_, 2)
-        prev_low = safe_float(df_d["Low"].iloc[-2])
-        sl_by_low = round(prev_low * 0.996, 2)
-        sl_by_pct = round(cmp_ * 0.99, 2)
-        sl = round(min(sl_by_low, sl_by_pct), 2)
-        if sl % 1 == 0:
-            sl -= 0.30
+            print(f"  Proxy {symbol} SKIP - HM MILEGA"); return None
+        atr = safe_float(calc_atr(df_d).iloc[-1]); cmp_ = close; entry_low = round(cmp_ * 0.998, 2); entry_high = round(cmp_, 2); prev_low = safe_float(df_d["Low"].iloc[-2]); sl_by_low = round(prev_low * 0.996, 2); sl_by_pct = round(cmp_ * 0.99, 2); sl = round(min(sl_by_low, sl_by_pct), 2)
+        if sl % 1 == 0: sl -= 0.30
         risk = entry_high - sl
-        if risk <= 0:
-            risk = round(cmp_ * 0.01, 2)
-            sl = round(cmp_ - risk, 2)
-        t1 = round(entry_high + risk * 1.5, 2)
-        t2 = round(entry_high + risk * 2.5, 2)
-        sl_pct = round(risk / entry_high * 100, 2)
-        vol_ratio = round(vol / vol_sma20, 2) if vol_sma20 > 0 else 0
+        if risk <= 0: risk = round(cmp_ * 0.01, 2); sl = round(cmp_ - risk, 2)
+        t1 = round(entry_high + risk * 1.5, 2); t2 = round(entry_high + risk * 2.5, 2); sl_pct = round(risk / entry_high * 100, 2); vol_ratio = round(vol / vol_sma20, 2) if vol_sma20 > 0 else 0
         score = 75
-        if vol_ratio > 2.0:
-            score += 10
-        elif vol_ratio > 1.5:
-            score += 5
-        if rsi9 > 65:
-            score += 5
-        if rsi9 > 70:
-            score += 5
-        if mo_rsi > 70:
-            score += 5
-        if hm["signal"] in ["HILEGA", "HILEGA_HOLD"]:
-            score += 3
-        prob = min(95, score)
-        win = min(92, 65 + (score - 75) * 1.0)
+        if vol_ratio > 2.0: score += 10
+        elif vol_ratio > 1.5: score += 5
+        if rsi9 > 65: score += 5
+        if rsi9 > 70: score += 5
+        if mo_rsi > 70: score += 5
+        if hm["signal"] in ["HILEGA", "HILEGA_HOLD"]: score += 3
+        prob = min(95, score); win = min(92, 65 + (score - 75) * 1.0)
         return {"symbol": symbol, "strategy": "PROXY AVWP", "tag": "PROXY AVWP", "emoji": "📈", "cmp": round(cmp_, 2), "entry_low": entry_low, "entry_high": entry_high, "sl": sl, "t1": t1, "t2": t2, "sl_pct": sl_pct, "risk": round(risk, 2), "score": score, "prob": prob, "win": win, "rsi9": round(rsi9, 1), "monthly_rsi": round(mo_rsi, 1), "ema20": round(ema20, 2), "ema50": round(ema50, 2), "vol_ratio": vol_ratio, "pb": round(pb, 2), "prev_close": round(prev_close, 2), "high_1ago": round(high_1ago, 2), "high_5ago": round(high_5ago, 2), "atr": round(atr, 2), "hm": hm}
     except Exception as e:
-        print(f"Proxy AVWP {symbol} err {e}")
-        return None
+        print(f"Proxy AVWP {symbol} err {e}"); return None
 
 def get_market():
     try:
         nifty = get_data_safe("^NSEI", period="3mo", interval="1d")
-        n_cmp = safe_float(nifty["Close"].iloc[-1]) if nifty is not None else 0
-        n_rsi = safe_float(calc_rsi(nifty["Close"]).iloc[-1]) if nifty is not None else 50
+        n_cmp = safe_float(nifty["Close"].iloc[-1]) if nifty is not None else 0; n_rsi = safe_float(calc_rsi(nifty["Close"]).iloc[-1]) if nifty is not None else 50
         return {"nifty": n_cmp, "rsi": n_rsi}
     except Exception:
         return {"nifty": 0, "rsi": 50}
 
 def send_telegram(msg):
     if not BOT_TOKEN:
-        print("No BOT_TOKEN")
-        return
+        print("No BOT_TOKEN"); return
     for cid in CHAT_IDS:
         try:
             chunks = [msg[i:i+3800] for i in range(0, len(msg), 3800)] or [msg]
@@ -525,31 +448,43 @@ def record_paper(symbol, r, bot_name):
         file_exists = os.path.exists(PAPER_FILE)
         with open(PAPER_FILE, "a", newline="") as f:
             w = csv.writer(f)
-            if not file_exists:
-                w.writerow(["date", "bot", "symbol", "entry", "sl", "t1", "t2", "qty", "status", "exit_price", "pnl", "exit_reason"])
-            w.writerow([datetime.now(IST).strftime("%Y-%m-%d"), bot_name, symbol, r["entry_high"], round(r["sl"] * 0.995), r["t1"], r["t2"], PAPER_QTY, "OPEN", "", "", ""])
+            if not file_exists: w.writerow(["date", "bot", "symbol", "entry", "sl", "t1", "t2", "qty", "status", "exit_price", "pnl", "exit_reason"])
+            w.writerow([datetime.now(IST).strftime("%Y-%m-%d"), bot_name, symbol, r.get("entry_high", r.get("cmp", 0)), round(r.get("sl", 0) * 0.995) if r.get("sl") else "", r.get("t1", ""), r.get("t2", ""), PAPER_QTY, "OPEN", "", "", ""])
         print(f"Paper recorded {bot_name} {symbol}")
     except Exception as e:
         print(f"Paper record err {e}")
 
 def is_already_papered_today(symbol, bot_name):
     try:
-        if not os.path.exists(PAPER_FILE):
-            return False
+        if not os.path.exists(PAPER_FILE): return False
         today = datetime.now(IST).strftime("%Y-%m-%d")
         with open(PAPER_FILE, "r") as f:
             rows = list(csv.DictReader(f))
             for r in rows:
-                if r.get("date") == today and r.get("symbol") == symbol and r.get("bot") == bot_name:
-                    return True
+                if r.get("date") == today and r.get("symbol") == symbol and r.get("bot") == bot_name: return True
         return False
     except Exception:
         return False
 
+def build_pre_msg(market, pre_list, mode):
+    header, live_txt = get_scan_header(mode)
+    msg = f"{header}\nData: {DATA_MODE} {live_txt}\n"
+    msg += f"Market: Nifty:{market['nifty']:.0f} RSI:{market['rsi']:.0f}\n"
+    msg += f"Scan:{len(NIFTY500)} | PRE Watchlist:{len(pre_list)}\n\n"
+    msg += "=== PRE 9:20 WATCHLIST 👀 ===\n"
+    msg += "Ye entry nahi hai - Sirf Watchlist hai. 9:30 pe 15m RET-200 + HILEGA confirm hoga tabhi entry hogi.\n"
+    msg += "Monthly EMA8>EMA20 + RSI>60 | Weekly Close>EMA20 <=EMA20x1.03 | RET PRE: Weekly Squeeze <=0.5%\n\n"
+    if len(pre_list) == 0:
+        msg += "No PRE candidate today.\n\n"
+    else:
+        for i, r in enumerate(pre_list[:8]):
+            msg += f"{i+1}. {r['symbol']} CMP:{r['cmp']:.0f} {r['emoji']} {r['tag']} | Monthly RSI {r['monthly_rsi']:.0f} | Weekly EMA8 {r['weekly_ema8']:.0f} > EMA20 {r['weekly_ema20']:.0f} Squeeze {r['weekly_squeeze_pct']:.2f}%\n"
+    msg += "\nRule: 9:30 wale FULL msg ka wait karo. PRE wale stock ko chart pe khol ke rakho.\nPAPER ONLY\n"
+    return msg
+
 def build_full_msg(market, fresh_list, ret_list, proxy_list, mode):
-    now_str = datetime.now(IST).strftime("%d-%m %I:%M %p IST")
-    data_src = "Upstox Live" if UPSTOX_ENABLED else "Yahoo Fallback"
-    msg = f"BALA V1.3 - {now_str} - {mode}\nData: {data_src}\n"
+    header, live_txt = get_scan_header(mode)
+    msg = f"{header}\nData: {DATA_MODE} {live_txt}\n"
     msg += f"Market: Nifty:{market['nifty']:.0f} RSI:{market['rsi']:.0f}\n"
     msg += f"Scan:{len(NIFTY500)} | Fresh:{len(fresh_list)} | RET-200:{len(ret_list)} | Proxy:{len(proxy_list)}\n\n"
     msg += "=== 1. BALA FRESH 🔥 + RET-200 ↩️ ===\n"
@@ -561,8 +496,7 @@ def build_full_msg(market, fresh_list, ret_list, proxy_list, mode):
         msg += "No Fresh / RET-200 today.\n\n"
     else:
         for i, r in enumerate(combined[:5]):
-            sl_gtt = round(r["sl"] * 0.995)
-            hm = r.get("hm", {})
+            sl_gtt = round(r["sl"] * 0.995); hm = r.get("hm", {})
             if r["strategy"] == "RET-200":
                 msg += f"{i+1}. {r['symbol']} CMP:{r['cmp']:.0f} Score:{r['score']:.0f} P:{r['prob']:.0f}% W:{r['win']:.0f}% ↩️ RET-200\n"
                 msg += f"   Entry:{r['entry_low']:.0f}-{r['entry_high']:.0f} SL:{r['sl']:.0f} ({r['sl_pct']:.1f}%) T1:{r['t1']:.0f} T2:{r['t2']:.0f}\n"
@@ -581,28 +515,23 @@ def build_full_msg(market, fresh_list, ret_list, proxy_list, mode):
         msg += "No Proxy AVWP today.\n\n"
     else:
         for i, r in enumerate(proxy_list[:5]):
-            sl_gtt = round(r["sl"] * 0.995)
-            hm = r.get("hm", {})
+            sl_gtt = round(r["sl"] * 0.995); hm = r.get("hm", {})
             msg += f"{i+1}. {r['symbol']} CMP:{r['cmp']:.0f} Score:{r['score']:.0f} P:{r['prob']:.0f}% W:{r['win']:.0f}% 📈 PROXY AVWP\n"
             msg += f"   Entry:{r['entry_low']:.0f}-{r['entry_high']:.0f} SL:{r['sl']:.0f} ({r['sl_pct']:.1f}%) T1:{r['t1']:.0f} T2:{r['t2']:.0f}\n"
             msg += f"   Daily: Close {r['cmp']:.0f} > 1D High {r['high_1ago']:.0f} > 5D High {r['high_5ago']:.0f} | EMA20 {r['ema20']:.0f} > EMA50 {r['ema50']:.0f} | RSI9 {r['rsi9']:.0f} | Vol {r['vol_ratio']:.1f}x | Monthly RSI {r['monthly_rsi']:.0f} | P/B {r['pb']:.1f} | HM {hm.get('signal', '')}\n"
             msg += f"   PAPER GTT: SL {sl_gtt:.0f} | T1 {r['t1']:.0f} 50% | T2 {r['t2']:.0f} 50% | Qty {PAPER_QTY} VIRTUAL\n\n"
-    fresh_syms = set([x["symbol"] for x in fresh_list])
-    ret_syms = set([x["symbol"] for x in ret_list])
-    proxy_syms = set([x["symbol"] for x in proxy_list])
-    overlap = (fresh_syms | ret_syms) & proxy_syms
+    fresh_syms = set([x["symbol"] for x in fresh_list]); ret_syms = set([x["symbol"] for x in ret_list]); proxy_syms = set([x["symbol"] for x in proxy_list]); overlap = (fresh_syms | ret_syms) & proxy_syms
     if overlap:
         msg += f"⭐⭐ DOUBLE CONFIRM - Dono me aaya: {', '.join(list(overlap))} - Sabse strong hai\n\n"
     msg += "Rule: Entry CMP ke paas hi lo. T1 pe 50% book, SL to Entry. Swing: Hold till T2.\nPAPER ONLY: No real GTT placed.\n"
     return msg
 
 def build_quick_msg(market, new_list, mode):
-    now_str = datetime.now(IST).strftime("%d-%m %I:%M %p IST")
-    msg = f"BALA V1.3 - NEW SIGNAL - {now_str} - {mode}\n"
+    header, live_txt = get_scan_header(mode)
+    msg = f"{header}\nData: {DATA_MODE} {live_txt}\n"
     msg += f"Market: Nifty:{market['nifty']:.0f} RSI:{market['rsi']:.0f}\n\n"
     for i, r in enumerate(new_list):
-        sl_gtt = round(r["sl"] * 0.995)
-        hm = r.get("hm", {})
+        sl_gtt = round(r["sl"] * 0.995); hm = r.get("hm", {})
         if r["strategy"] == "RET-200":
             msg += f"{i+1}. {r['symbol']} ↩️ RET-200 CMP:{r['cmp']:.0f} P:{r['prob']:.0f}% Score:{r['score']:.0f}\n"
             msg += f"   Entry:{r['entry_low']:.0f}-{r['entry_high']:.0f} SL:{r['sl']:.0f} ({r['sl_pct']:.1f}%) T1:{r['t1']:.0f} T2:{r['t2']:.0f}\n"
@@ -617,45 +546,48 @@ def build_quick_msg(market, new_list, mode):
     return msg
 
 def scan_fresh_and_ret():
-    fresh_list = []
-    ret_list = []
+    fresh_list = []; ret_list = []
     with ThreadPoolExecutor(max_workers=10) as ex:
         def scan_one(sym):
             df_15 = get_15m_df(sym)
-            if df_15 is None:
-                return (None, None)
-            f = check_fresh_cross_strategy(sym, df_15=df_15)
-            r = None
-            if f is None:
-                r = check_ret200_strategy(sym, df_15=df_15)
+            if df_15 is None: return (None, None)
+            f = check_fresh_cross_strategy(sym, df_15=df_15); r = None
+            if f is None: r = check_ret200_strategy(sym, df_15=df_15)
             return (f, r)
         futs = {ex.submit(scan_one, sym): sym for sym in NIFTY500}
         for fut in futs:
             try:
                 f, r = fut.result()
-                if f:
-                    fresh_list.append(f)
-                    print(f"  ✅ FRESH PASS {f['symbol']} CMP {f['cmp']}")
-                if r:
-                    ret_list.append(r)
-                    print(f"  ✅ RET-200 PASS {r['symbol']} CMP {r['cmp']} EMA200 {r['e200_now']} Dist {r.get('dist_15_pct', 0)}% Squeeze {r.get('weekly_squeeze_pct', 0)}%")
-            except Exception as e:
-                print(f"Scan err {futs[fut]} {e}")
-    fresh_list = sorted(fresh_list, key=lambda x: x["score"], reverse=True)
-    ret_list = sorted(ret_list, key=lambda x: x["score"], reverse=True)
+                if f: fresh_list.append(f); print(f"  ✅ FRESH PASS {f['symbol']} CMP {f['cmp']}")
+                if r: ret_list.append(r); print(f"  ✅ RET-200 PASS {r['symbol']} CMP {r['cmp']} EMA200 {r['e200_now']} Dist {r.get('dist_15_pct', 0)}% Squeeze {r.get('weekly_squeeze_pct', 0)}%")
+            except Exception as e: print(f"Scan err {futs[fut]} {e}")
+    fresh_list = sorted(fresh_list, key=lambda x: x["score"], reverse=True); ret_list = sorted(ret_list, key=lambda x: x["score"], reverse=True)
     return fresh_list, ret_list
+
+def scan_pre():
+    pre_list = []
+    with ThreadPoolExecutor(max_workers=10) as ex:
+        futs = {ex.submit(check_pre_candidate, sym): sym for sym in NIFTY500}
+        for fut in futs:
+            try:
+                r = fut.result()
+                if r: pre_list.append(r); print(f"  👀 PRE PASS {r['symbol']} {r['tag']} Squeeze {r['weekly_squeeze_pct']}%")
+            except Exception as e: print(f"PRE scan err {futs[fut]} {e}")
+    pre_list = sorted(pre_list, key=lambda x: x["score"], reverse=True)
+    return pre_list
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--mode", default="auto", choices=["auto", "full", "quick"])
+    parser.add_argument("--mode", default="auto", choices=["auto", "full", "quick", "pre"])
     args = parser.parse_args()
     now_ist = datetime.now(IST)
-    print(f"BALA V1.3 Start {now_ist.strftime('%d-%m-%Y %H:%M %A IST')} Arg Mode:{args.mode}")
+    print(f"BALA V1.5 Start {now_ist.strftime('%d-%m-%Y %H:%M %A IST')} Arg Mode:{args.mode} Run #{GITHUB_RUN_NUMBER} SCAN {SCAN_START_STR}")
     try:
         if args.mode == "auto":
-            hh = now_ist.hour
-            mm = now_ist.minute
-            if hh == 9 and mm < 45:
+            hh = now_ist.hour; mm = now_ist.minute
+            if hh == 9 and mm < 25:
+                mode = "pre"
+            elif hh == 9 and mm < 45:
                 mode = "full"
             elif hh == 9 and mm >= 45:
                 mode = "quick"
@@ -667,7 +599,13 @@ def main():
             mode = args.mode
         print(f"Resolved Mode: {mode} Time:{now_ist.strftime('%H:%M')}")
         market = get_market()
-        if mode == "full":
+        if mode == "pre":
+            pre_list = scan_pre()
+            print(f"PRE: {len(pre_list)} candidates")
+            msg = build_pre_msg(market, pre_list, "PRE 9:20 AM")
+            send_telegram(msg)
+            print("BALA V1.5 PRE Done")
+        elif mode == "full":
             fresh_list, ret_list = scan_fresh_and_ret()
             print(f"Full scan Fresh {len(fresh_list)} Ret {len(ret_list)} - Now Proxy...")
             proxy_list = []
@@ -676,63 +614,48 @@ def main():
                 for fut in futs_proxy:
                     try:
                         r = fut.result()
-                        if r:
-                            proxy_list.append(r)
-                            print(f"  ✅ PROXY PASS {r['symbol']} CMP {r['cmp']} RSI9 {r['rsi9']} Vol {r['vol_ratio']}x")
-                    except Exception as e:
-                        print(f"Proxy scan err {futs_proxy[fut]} {e}")
+                        if r: proxy_list.append(r); print(f"  ✅ PROXY PASS {r['symbol']} CMP {r['cmp']} RSI9 {r['rsi9']} Vol {r['vol_ratio']}x")
+                    except Exception as e: print(f"Proxy scan err {futs_proxy[fut]} {e}")
             proxy_list = sorted(proxy_list, key=lambda x: x["score"], reverse=True)
             print(f"PASS: Fresh {len(fresh_list)} / Ret {len(ret_list)} / Proxy {len(proxy_list)}")
             for r in fresh_list[:5]:
                 try:
-                    if not is_already_papered_today(r["symbol"], "BALA_FRESH_CROSS"):
-                        record_paper(r["symbol"], r, "BALA_FRESH_CROSS")
-                except Exception as e:
-                    print(f"Paper skip {e}")
+                    if not is_already_papered_today(r["symbol"], "BALA_FRESH_CROSS"): record_paper(r["symbol"], r, "BALA_FRESH_CROSS")
+                except Exception as e: print(f"Paper skip {e}")
             for r in ret_list[:5]:
                 try:
-                    if not is_already_papered_today(r["symbol"], "BALA_RET200"):
-                        record_paper(r["symbol"], r, "BALA_RET200")
-                except Exception as e:
-                    print(f"Paper skip {e}")
+                    if not is_already_papered_today(r["symbol"], "BALA_RET200"): record_paper(r["symbol"], r, "BALA_RET200")
+                except Exception as e: print(f"Paper skip {e}")
             for r in proxy_list[:5]:
                 try:
-                    if not is_already_papered_today(r["symbol"], "PROXY_AVWP"):
-                        record_paper(r["symbol"], r, "PROXY_AVWP")
-                except Exception as e:
-                    print(f"Paper skip {e}")
+                    if not is_already_papered_today(r["symbol"], "PROXY_AVWP"): record_paper(r["symbol"], r, "PROXY_AVWP")
+                except Exception as e: print(f"Paper skip {e}")
             msg = build_full_msg(market, fresh_list, ret_list, proxy_list, "FULL 9:30 AM")
             send_telegram(msg)
-            print("BALA V1.3 FULL Done")
+            print("BALA V1.5 FULL Done")
         else:
             fresh_list, ret_list = scan_fresh_and_ret()
-            combined = fresh_list + ret_list
-            new_list = []
+            combined = fresh_list + ret_list; new_list = []
             for r in combined:
                 bot_name = "BALA_FRESH_CROSS" if r["strategy"] == "FRESH CROSS" else "BALA_RET200"
-                if not is_already_papered_today(r["symbol"], bot_name):
-                    new_list.append(r)
+                if not is_already_papered_today(r["symbol"], bot_name): new_list.append(r)
             print(f"QUICK: Fresh {len(fresh_list)} Ret {len(ret_list)} New {len(new_list)}")
             if len(new_list) == 0:
-                print("QUICK: No new signal - Silent, no Telegram")
-                return
+                print("QUICK: No new signal - Silent, no Telegram"); return
             new_list = sorted(new_list, key=lambda x: x["score"], reverse=True)[:5]
             for r in new_list:
                 try:
-                    bot_name = "BALA_FRESH_CROSS" if r["strategy"] == "FRESH CROSS" else "BALA_RET200"
-                    record_paper(r["symbol"], r, bot_name)
-                except Exception as e:
-                    print(f"Paper skip {e}")
+                    bot_name = "BALA_FRESH_CROSS" if r["strategy"] == "FRESH CROSS" else "BALA_RET200"; record_paper(r["symbol"], r, bot_name)
+                except Exception as e: print(f"Paper skip {e}")
             msg = build_quick_msg(market, new_list, "QUICK 15-MIN")
             send_telegram(msg)
-            print("BALA V1.3 QUICK Done - New signal sent")
+            print("BALA V1.5 QUICK Done - New signal sent")
     except Exception as e:
-        print(f"V1.3 CRASH {e}")
-        traceback.print_exc()
+        print(f"V1.5 CRASH {e}"); traceback.print_exc()
         try:
-            send_telegram(f"BALA V1.3 CRASHED: {e} Time: {now_ist}")
-        except Exception:
-            pass
+            header2, live_txt2 = get_scan_header("CRASH")
+            send_telegram(f"{header2}\nBALA V1.5 CRASHED: {e}")
+        except Exception: pass
 
 if __name__ == "__main__":
     main()
